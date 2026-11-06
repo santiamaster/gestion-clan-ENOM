@@ -94,6 +94,8 @@ def calcular_dano_final(
 - Estadística final: `estadística racial + crecimiento profesional × nivel`.
 - La fórmula se aplica desde nivel 1; por lo tanto, un aventurero inicial ya
   recibe una vez el crecimiento de su profesión.
+- Al alcanzar el nivel 10, las cuatro estadísticas calculadas reciben un 20%
+  adicional. El bono se aplica al resultado normal y se redondea hacia abajo.
 - Para subir de nivel se necesita `nivel actual × 100` de experiencia.
 - Un aventurero puede subir varios niveles en una sola entrega de experiencia.
 - La experiencia sobrante se conserva.
