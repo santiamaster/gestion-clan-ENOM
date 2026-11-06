@@ -7,6 +7,8 @@
 - Los aventureros tienen niveles del 1 al 10.
 - La experiencia necesaria para subir es `nivel actual × 100`.
 - La experiencia sobrante se conserva.
+- Al alcanzar el nivel 10, las cuatro estadísticas reciben un 20% adicional.
+- En el nivel 10 la experiencia deja de acumularse y se conserva en cero.
 
 ## Combate
 
@@ -15,6 +17,8 @@
 - Los empates se resuelven con una tirada de d100.
 - El crítico base es 5% y causa 150% del daño.
 - Los ataques efectivos causan 150%, los neutrales 100% y los inefectivos 50%.
+- Los multiplicadores de efectividad y crítico se combinan antes de redondear.
+- Por regla general, todo resultado decimal se redondea hacia abajo.
 - La vida no se recupera entre oleadas.
 - Los enfriamientos se conservan durante toda la expedición.
 - Cada oleada tiene un límite de 30 rondas.
@@ -34,4 +38,19 @@
 - Los muertos recuperados permanecen en el clan y ocupan cupo.
 - La iglesia permite revivirlos o enterrarlos con honores.
 - Alcanzar el nivel 5 del clan representa la victoria.
+
+## Cálculos base implementados
+
+Las funciones puras de `servicios/calculos.py` resuelven actualmente:
+
+- Estadísticas de un aventurero según su plantilla y nivel.
+- Experiencia necesaria, ascensos múltiples y experiencia sobrante.
+- Cupo del clan según su nivel.
+- Coste de contratación según profesión y nivel.
+- Probabilidad crítica total.
+- Daño modificado por efectividad y crítico.
+
+Estas funciones no modifican listas, archivos JSON ni elementos de la
+interfaz. La defensa, las tiradas y las habilidades se incorporarán en los
+bloques correspondientes al sistema de combate.
 

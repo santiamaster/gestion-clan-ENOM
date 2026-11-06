@@ -6,6 +6,7 @@ from typing import Literal, TypeAlias, TypedDict
 Sexo: TypeAlias = Literal["masculino", "femenino"]
 EstadoAventurero: TypeAlias = Literal["vivo", "muerto"]
 TipoAtaque: TypeAlias = Literal["cuerpo_a_cuerpo", "distancia", "magico"]
+EfectividadAtaque: TypeAlias = Literal["efectivo", "neutral", "inefectivo"]
 MotivoBaja: TypeAlias = Literal[
     "servicios_finalizados",
     "enterrado_con_honores",
