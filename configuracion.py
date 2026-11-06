@@ -1,0 +1,12 @@
+"""Constantes generales utilizadas por las reglas del juego."""
+
+CRITICO_BASE: int = 5
+MULTIPLICADOR_CRITICO: float = 1.50
+LIMITE_IMPACTO_NORMAL: int = 90
+RESULTADO_FALLO_CRITICO: int = 100
+
+NIVEL_MAXIMO_AVENTURERO: int = 10
+NIVEL_MAXIMO_CLAN: int = 5
+CANTIDAD_OLEADAS_MAZMORRA: int = 10
+LIMITE_RONDAS_OLEADA: int = 30
+

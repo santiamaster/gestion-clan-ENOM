@@ -1,0 +1,24 @@
+[project]
+name = "gestion-clan-enom"
+version = "0.1.0"
+description = "Proyecto integrador de gestión de un clan de aventureros de ENOM"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = [
+    "catalogos",
+    "interfaz",
+    "modelos",
+    "servicios",
+    "tests",
+    "configuracion.py",
+    "main.py",
+]
+exclude = [".venv", "venv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
