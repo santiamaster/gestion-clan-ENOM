@@ -8,13 +8,13 @@ from modelos.tipos import (
     AventureroEliminado,
     EstadoAventurero,
     EstadoClan,
-    EstadoMercado,
     EstadoPartida,
     MazmorrasCompletadas,
     MotivoBaja,
     NivelClan,
     OfertaReclutamiento,
 )
+from servicios.calculos import calcular_coste_contratacion
 
 
 class ErrorValidacionDatos(ValueError):
@@ -203,7 +203,11 @@ def _validar_mazmorras(valor: object) -> MazmorrasCompletadas:
     }
 
 
-def _validar_oferta(valor: object, posicion: int) -> OfertaReclutamiento:
+def _validar_oferta(
+    valor: object,
+    posicion: int,
+    nivel_clan: int,
+) -> OfertaReclutamiento:
     """Valida y copia una oferta individual del gremio."""
 
     if not _es_diccionario_cadena_objeto(valor):
@@ -221,10 +225,20 @@ def _validar_oferta(valor: object, posicion: int) -> OfertaReclutamiento:
         raise ErrorValidacionDatos(
             f"La plantilla '{plantilla_id}' no está registrada."
         )
-    if not 1 <= nivel <= 10:
-        raise ErrorValidacionDatos("El nivel de la oferta debe estar entre 1 y 10.")
-    if coste < 0:
-        raise ErrorValidacionDatos("El coste de la oferta no puede ser negativo.")
+    if not 1 <= nivel <= nivel_clan:
+        raise ErrorValidacionDatos(
+            "El nivel de la oferta debe estar entre 1 y el nivel del clan."
+        )
+
+    plantilla = CATALOGO_PLANTILLAS[plantilla_id]
+    coste_esperado: int = calcular_coste_contratacion(
+        plantilla["coste_base"],
+        nivel,
+    )
+    if coste != coste_esperado:
+        raise ErrorValidacionDatos(
+            "El coste de la oferta no coincide con su plantilla y nivel."
+        )
 
     return {
         "id_oferta": identificador,
@@ -255,7 +269,10 @@ def validar_estado_clan(datos: object) -> EstadoClan:
     nivel_entero: int = _obtener_entero(datos, "nivel")
     dinero: int = _obtener_entero(datos, "dinero")
     siguiente_id: int = _obtener_entero(datos, "siguiente_id_aventurero")
-    mercado_texto: str = _obtener_cadena(datos, "estado_mercado")
+    contrataciones_restantes: int = _obtener_entero(
+        datos,
+        "contrataciones_restantes",
+    )
     partida_texto: str = _obtener_cadena(datos, "estado_partida")
 
     if not 1 <= nivel_entero <= 5:
@@ -266,8 +283,11 @@ def validar_estado_clan(datos: object) -> EstadoClan:
         raise ErrorValidacionDatos(
             "El siguiente identificador de aventurero debe ser positivo."
         )
-    if mercado_texto not in ("disponible", "contratacion_realizada"):
-        raise ErrorValidacionDatos("El estado del mercado no es válido.")
+    if not 0 <= contrataciones_restantes <= nivel_entero:
+        raise ErrorValidacionDatos(
+            "Las contrataciones restantes deben estar entre cero y el nivel "
+            "del clan."
+        )
     if partida_texto not in ("en_curso", "victoria", "derrota"):
         raise ErrorValidacionDatos("El estado de la partida no es válido.")
 
@@ -280,20 +300,34 @@ def validar_estado_clan(datos: object) -> EstadoClan:
             "El campo 'ofertas_reclutamiento' debe ser una lista."
         )
     elementos: list[object] = cast(list[object], ofertas_sin_validar)
+    if len(elementos) > nivel_entero * 2:
+        raise ErrorValidacionDatos(
+            "La cantidad de ofertas supera el máximo permitido por el nivel "
+            "del clan."
+        )
+    if len(elementos) < contrataciones_restantes:
+        raise ErrorValidacionDatos(
+            "Debe haber al menos tantas ofertas como contrataciones restantes."
+        )
+
     ofertas: list[OfertaReclutamiento] = [
-        _validar_oferta(valor, posicion)
+        _validar_oferta(valor, posicion, nivel_entero)
         for posicion, valor in enumerate(elementos)
     ]
+    identificadores: list[str] = [oferta["id_oferta"] for oferta in ofertas]
+    if len(identificadores) != len(set(identificadores)):
+        raise ErrorValidacionDatos(
+            "Los identificadores de las ofertas no pueden repetirse."
+        )
 
     nivel: NivelClan = cast(NivelClan, nivel_entero)
-    mercado: EstadoMercado = mercado_texto
     estado_partida: EstadoPartida = partida_texto
     return {
         "nombre": nombre,
         "nivel": nivel,
         "dinero": dinero,
         "siguiente_id_aventurero": siguiente_id,
-        "estado_mercado": mercado,
+        "contrataciones_restantes": contrataciones_restantes,
         "estado_partida": estado_partida,
         "mazmorras_completadas": mazmorras,
         "ofertas_reclutamiento": ofertas,

@@ -33,7 +33,6 @@ EstrategiaObjetivo: TypeAlias = Literal[
     "todos_los_aliados",
     "hasta_tres_enemigos",
 ]
-EstadoMercado: TypeAlias = Literal["disponible", "contratacion_realizada"]
 EstadoPartida: TypeAlias = Literal["en_curso", "victoria", "derrota"]
 ResultadoExpedicion: TypeAlias = Literal[
     "retirada",
@@ -98,7 +97,7 @@ class EstadoClan(TypedDict):
     nivel: NivelClan
     dinero: int
     siguiente_id_aventurero: int
-    estado_mercado: EstadoMercado
+    contrataciones_restantes: int
     estado_partida: EstadoPartida
     mazmorras_completadas: MazmorrasCompletadas
     ofertas_reclutamiento: list[OfertaReclutamiento]

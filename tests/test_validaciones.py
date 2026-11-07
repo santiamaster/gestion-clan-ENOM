@@ -32,7 +32,7 @@ def crear_estado_clan() -> dict[str, object]:
         "nivel": 1,
         "dinero": 0,
         "siguiente_id_aventurero": 4,
-        "estado_mercado": "disponible",
+        "contrataciones_restantes": 1,
         "estado_partida": "en_curso",
         "mazmorras_completadas": {
             "mazmorra_1": False,
@@ -43,12 +43,19 @@ def crear_estado_clan() -> dict[str, object]:
         },
         "ofertas_reclutamiento": [
             {
-                "id_oferta": "OF-0001",
+                "id_oferta": "OF-01",
                 "nombre": "Bruno",
                 "plantilla_id": "PLANTILLA_SOLDADO",
                 "nivel": 1,
                 "coste": 10,
-            }
+            },
+            {
+                "id_oferta": "OF-02",
+                "nombre": "Aelira",
+                "plantilla_id": "PLANTILLA_ARQUERO",
+                "nivel": 1,
+                "coste": 10,
+            },
         ],
     }
 
@@ -146,7 +153,6 @@ class PruebasValidacionEstadoClan(unittest.TestCase):
             ("nivel", 6),
             ("dinero", -1),
             ("siguiente_id_aventurero", 0),
-            ("estado_mercado", "cerrado"),
             ("estado_partida", "desconocido"),
         ]
 
@@ -156,6 +162,85 @@ class PruebasValidacionEstadoClan(unittest.TestCase):
                 estado[campo] = valor
                 with self.assertRaises(ErrorValidacionDatos):
                     validar_estado_clan(estado)
+
+    def test_rechaza_contador_de_contrataciones_invalido(self) -> None:
+        casos: tuple[object, ...] = (True, -1, 2)
+
+        for valor in casos:
+            with self.subTest(valor=valor):
+                estado = crear_estado_clan()
+                estado["contrataciones_restantes"] = valor
+                with self.assertRaisesRegex(
+                    ErrorValidacionDatos,
+                    "contrataciones_restantes|contrataciones restantes",
+                ):
+                    validar_estado_clan(estado)
+
+    def test_rechaza_estado_del_esquema_anterior(self) -> None:
+        estado = crear_estado_clan()
+        del estado["contrataciones_restantes"]
+        estado["estado_mercado"] = "disponible"
+
+        with self.assertRaisesRegex(
+            ErrorValidacionDatos,
+            "contrataciones_restantes",
+        ):
+            validar_estado_clan(estado)
+
+    def test_rechaza_mas_ofertas_que_el_maximo_del_nivel(self) -> None:
+        estado = crear_estado_clan()
+        ofertas = cast(list[object], estado["ofertas_reclutamiento"])
+        ofertas.append(
+            {
+                "id_oferta": "OF-03",
+                "nombre": "Ciro",
+                "plantilla_id": "PLANTILLA_SOLDADO",
+                "nivel": 1,
+                "coste": 10,
+            }
+        )
+
+        with self.assertRaisesRegex(ErrorValidacionDatos, "cantidad de ofertas"):
+            validar_estado_clan(estado)
+
+    def test_rechaza_menos_ofertas_que_contrataciones_restantes(self) -> None:
+        estado = crear_estado_clan()
+        estado["nivel"] = 2
+        estado["contrataciones_restantes"] = 2
+        estado["ofertas_reclutamiento"] = [
+            cast(list[object], estado["ofertas_reclutamiento"])[0]
+        ]
+
+        with self.assertRaisesRegex(
+            ErrorValidacionDatos,
+            "ofertas.*contrataciones restantes",
+        ):
+            validar_estado_clan(estado)
+
+    def test_rechaza_identificadores_de_oferta_repetidos(self) -> None:
+        estado = crear_estado_clan()
+        ofertas = cast(list[dict[str, object]], estado["ofertas_reclutamiento"])
+        ofertas[1]["id_oferta"] = ofertas[0]["id_oferta"]
+
+        with self.assertRaisesRegex(ErrorValidacionDatos, "identificadores"):
+            validar_estado_clan(estado)
+
+    def test_rechaza_oferta_superior_al_nivel_del_clan(self) -> None:
+        estado = crear_estado_clan()
+        ofertas = cast(list[dict[str, object]], estado["ofertas_reclutamiento"])
+        ofertas[0]["nivel"] = 2
+        ofertas[0]["coste"] = 20
+
+        with self.assertRaisesRegex(ErrorValidacionDatos, "nivel de la oferta"):
+            validar_estado_clan(estado)
+
+    def test_rechaza_oferta_con_coste_incorrecto(self) -> None:
+        estado = crear_estado_clan()
+        ofertas = cast(list[dict[str, object]], estado["ofertas_reclutamiento"])
+        ofertas[0]["coste"] = 11
+
+        with self.assertRaisesRegex(ErrorValidacionDatos, "coste de la oferta"):
+            validar_estado_clan(estado)
 
     def test_rechaza_banderas_de_mazmorras_invalidas(self) -> None:
         estado_incompleto = crear_estado_clan()
