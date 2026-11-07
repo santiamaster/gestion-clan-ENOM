@@ -12,6 +12,7 @@ from servicios.persistencia import (
     existe_partida_guardada,
     guardar_partida,
 )
+from servicios.reclutamiento import renovar_mercado
 
 
 class PartidaExistenteError(ErrorPersistencia):
@@ -34,7 +35,7 @@ def crear_nueva_partida(
         nombre_clan: Nombre elegido por el jugador para su clan.
         sobrescribir: Autoriza reemplazar una partida completa y válida.
         directorio: Carpeta que contendrá los tres archivos JSON.
-        generador: Fuente de azar opcional para controlar los nombres.
+        generador: Fuente de azar opcional para controlar nombres y ofertas.
 
     Returns:
         El estado del clan, los tres aventureros activos y el historial vacío.
@@ -57,6 +58,7 @@ def crear_nueva_partida(
         generador_nombres
     )
     datos_eliminados: list[AventureroEliminado] = []
+    renovar_mercado(estado_clan, generador_nombres)
 
     guardar_partida(
         estado_clan,
