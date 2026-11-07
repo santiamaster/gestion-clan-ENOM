@@ -1,7 +1,7 @@
 """Consulta, resurrección y entierro de aventureros caídos."""
 
 from catalogos.plantillas import CATALOGO_PLANTILLAS
-from modelos.tipos import AventureroActivo, PlantillaAventurero
+from modelos.tipos import AventureroActivo, EstadoClan, PlantillaAventurero
 from servicios.calculos import (
     aplicar_descuento_resurreccion,
     calcular_coste_contratacion,
@@ -14,6 +14,10 @@ class AventureroNoEncontradoError(ValueError):
 
 class AventureroNoEstaMuertoError(ValueError):
     """Indica que el aventurero seleccionado todavía está vivo."""
+
+
+class DineroInsuficienteResurreccionError(ValueError):
+    """Indica que el clan no puede pagar el coste de la resurrección."""
 
 
 def listar_aventureros_muertos(
@@ -97,4 +101,46 @@ def calcular_coste_resurreccion(
         aventurero["nivel"],
     )
     return aplicar_descuento_resurreccion(coste_contratacion)
+
+
+def resucitar_aventurero(
+    estado_clan: EstadoClan,
+    datos_activos: list[AventureroActivo],
+    aventurero_id: str,
+) -> AventureroActivo:
+    """Resucita un cuerpo recuperado y descuenta su coste al clan.
+
+    Todas las condiciones se validan antes de modificar el dinero o el
+    aventurero. El integrante conserva su identidad, plantilla, nivel y
+    experiencia porque nunca abandona la lista de activos.
+
+    Args:
+        estado_clan: Estado persistente que contiene el dinero disponible.
+        datos_activos: Integrantes vivos y muertos que actualmente ocupan
+            cupo.
+        aventurero_id: Identificador del muerto que se desea resucitar.
+
+    Returns:
+        El registro existente con su estado cambiado a ``"vivo"``.
+
+    Raises:
+        AventureroNoEncontradoError: Si el ID no pertenece a un integrante.
+        AventureroNoEstaMuertoError: Si el integrante encontrado está vivo.
+        DineroInsuficienteResurreccionError: Si el clan no alcanza a pagar.
+    """
+
+    aventurero: AventureroActivo = buscar_aventurero_muerto(
+        datos_activos,
+        aventurero_id,
+    )
+    coste: int = calcular_coste_resurreccion(aventurero)
+
+    if estado_clan["dinero"] < coste:
+        raise DineroInsuficienteResurreccionError(
+            "El clan no posee dinero suficiente para esta resurrección."
+        )
+
+    estado_clan["dinero"] -= coste
+    aventurero["estado"] = "vivo"
+    return aventurero
 
