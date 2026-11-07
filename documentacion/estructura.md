@@ -20,14 +20,14 @@ Contienen información fija que no forma parte de una partida guardada.
 Los servicios contienen las reglas y no deben depender de Tkinter.
 
 - `calculos.py`: estadísticas, experiencia y economía.
-- `persistencia.py`: archivos JSON.
+- `persistencia.py`: rutas, carga, guardado y eliminación de la partida JSON.
 - `clan.py`: nivel, cupo, dinero y victoria o derrota.
 - `aventureros.py`: altas, búsquedas y bajas.
 - `reclutamiento.py`: ofertas y contrataciones.
 - `iglesia.py`: resurrecciones y entierros.
 - `combate.py`: rondas, ataques y habilidades.
 - `expediciones.py`: oleadas, botín y retirada.
-- `validaciones.py`: controles de entrada y reglas.
+- `validaciones.py`: conversión segura de datos externos a los tipos del dominio.
 
 ## Interfaz
 
@@ -35,7 +35,23 @@ Cada módulo representa una pantalla o grupo de componentes de Tkinter. La inter
 
 ## Datos
 
+Los archivos se separan según su función:
+
+```text
+datos/
+├── iniciales/       # Referencias vacías versionadas en Git
+└── partida/         # Partida local creada durante la ejecución
+```
+
+Cada ubicación utiliza tres archivos:
+
 - `datos_activos.json`: aventureros que ocupan cupo.
 - `datos_eliminados.json`: bajas y caídos no recuperados.
 - `estado_clan.json`: progreso, dinero, mercado y mazmorras completadas.
+
+`datos/partida/` está excluido mediante `.gitignore`. Jugar no genera cambios
+pendientes en el repositorio ni publica la partida personal en GitHub.
+
+La persistencia resuelve las rutas desde la ubicación del proyecto, por lo que
+funciona aunque el programa sea iniciado desde otro directorio de la terminal.
 

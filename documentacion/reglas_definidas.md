@@ -54,3 +54,18 @@ Estas funciones no modifican listas, archivos JSON ni elementos de la
 interfaz. La defensa, las tiradas y las habilidades se incorporarán en los
 bloques correspondientes al sistema de combate.
 
+## Persistencia implementada
+
+- Una partida está formada por estado del clan, aventureros activos e historial
+  de eliminados.
+- La ausencia total de los archivos significa que todavía no existe partida.
+- Una presencia parcial produce `PartidaIncompletaError`.
+- Un JSON malformado o incompatible produce `PartidaInvalidaError`.
+- Los archivos problemáticos se conservan intactos para evitar pérdida de datos.
+- Los datos se validan antes de cargarse y antes de guardarse.
+- El guardado utiliza archivos temporales y codificación UTF-8.
+- Los nombres con tildes y otros caracteres se conservan directamente.
+- La eliminación afecta solamente a los tres archivos conocidos.
+- La interfaz será responsable de transformar estas excepciones en mensajes para
+  el jugador.
+
