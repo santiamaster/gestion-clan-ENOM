@@ -5,8 +5,30 @@ from random import Random
 from catalogos.nombres import elegir_nombre
 from catalogos.plantillas import CATALOGO_PLANTILLAS
 from configuracion import NIVEL_MAXIMO_CLAN
-from modelos.tipos import EstadoClan, OfertaReclutamiento, PlantillaAventurero
-from servicios.calculos import calcular_coste_contratacion
+from modelos.tipos import (
+    AventureroActivo,
+    EstadoClan,
+    OfertaReclutamiento,
+    PlantillaAventurero,
+)
+from servicios.aventureros import formatear_id_aventurero
+from servicios.calculos import calcular_coste_contratacion, calcular_cupo_clan
+
+
+class OfertaNoEncontradaError(ValueError):
+    """Indica que el identificador no corresponde a una oferta vigente."""
+
+
+class MercadoAgotadoError(ValueError):
+    """Indica que el clan consumió todas las contrataciones de la renovación."""
+
+
+class CupoClanCompletoError(ValueError):
+    """Indica que los aventureros activos ya ocupan todo el cupo del clan."""
+
+
+class DineroInsuficienteError(ValueError):
+    """Indica que el clan no puede pagar el coste del candidato elegido."""
 
 
 def _validar_nivel_clan(nivel_clan: int) -> None:
@@ -127,4 +149,73 @@ def renovar_mercado(
 
     estado_clan["ofertas_reclutamiento"] = ofertas_nuevas
     estado_clan["contrataciones_restantes"] = limite
+
+
+def contratar_aventurero(
+    estado_clan: EstadoClan,
+    datos_activos: list[AventureroActivo],
+    id_oferta: str,
+) -> AventureroActivo:
+    """Contrata un candidato disponible y actualiza el mercado en memoria.
+
+    Args:
+        estado_clan: Estado persistente que contiene dinero, IDs y ofertas.
+        datos_activos: Aventureros que actualmente ocupan cupo en el clan.
+        id_oferta: Identificador temporal del candidato elegido.
+
+    Returns:
+        El nuevo aventurero vivo agregado al clan.
+
+    Raises:
+        OfertaNoEncontradaError: Si la oferta elegida ya no existe.
+        MercadoAgotadoError: Si no quedan contrataciones en la renovación.
+        CupoClanCompletoError: Si los integrantes vivos o muertos ocupan
+            todo el cupo actual.
+        DineroInsuficienteError: Si el clan no puede pagar la oferta.
+    """
+
+    oferta: OfertaReclutamiento | None = next(
+        (
+            candidata
+            for candidata in estado_clan["ofertas_reclutamiento"]
+            if candidata["id_oferta"] == id_oferta
+        ),
+        None,
+    )
+    if oferta is None:
+        raise OfertaNoEncontradaError(
+            f"No existe una oferta vigente con el ID '{id_oferta}'."
+        )
+    if estado_clan["contrataciones_restantes"] <= 0:
+        raise MercadoAgotadoError(
+            "No quedan contrataciones disponibles en esta renovación."
+        )
+    cupo: int = calcular_cupo_clan(estado_clan["nivel"])
+    if len(datos_activos) >= cupo:
+        raise CupoClanCompletoError(
+            "El clan debe liberar cupo antes de contratar otro aventurero."
+        )
+    if estado_clan["dinero"] < oferta["coste"]:
+        raise DineroInsuficienteError(
+            "El clan no posee dinero suficiente para esta contratación."
+        )
+
+    nuevo_aventurero: AventureroActivo = {
+        "id": formatear_id_aventurero(
+            estado_clan["siguiente_id_aventurero"]
+        ),
+        "nombre": oferta["nombre"],
+        "plantilla_id": oferta["plantilla_id"],
+        "nivel": oferta["nivel"],
+        "experiencia": 0,
+        "estado": "vivo",
+    }
+
+    datos_activos.append(nuevo_aventurero)
+    estado_clan["dinero"] -= oferta["coste"]
+    estado_clan["siguiente_id_aventurero"] += 1
+    estado_clan["ofertas_reclutamiento"].remove(oferta)
+    estado_clan["contrataciones_restantes"] -= 1
+
+    return nuevo_aventurero
 

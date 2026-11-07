@@ -2,16 +2,28 @@
 
 import unittest
 from collections.abc import Sequence
+from copy import deepcopy
 from random import Random
 from typing import TypeVar
 
 from catalogos.nombres import NOMBRES_FEMENINOS, NOMBRES_MASCULINOS
 from catalogos.plantillas import CATALOGO_PLANTILLAS
-from modelos.tipos import OfertaReclutamiento
+from modelos.tipos import (
+    AventureroActivo,
+    EstadoAventurero,
+    EstadoClan,
+    OfertaReclutamiento,
+)
+from servicios.aventureros import crear_aventureros_iniciales
 from servicios.clan import crear_estado_inicial_clan
 from servicios.reclutamiento import (
+    CupoClanCompletoError,
+    DineroInsuficienteError,
+    MercadoAgotadoError,
+    OfertaNoEncontradaError,
     calcular_cantidad_ofertas,
     calcular_limite_contrataciones,
+    contratar_aventurero,
     generar_ofertas,
     renovar_mercado,
 )
@@ -32,6 +44,54 @@ class GeneradorPrimerElemento(Random):
         """Devuelve siempre el límite inferior recibido."""
 
         return a
+
+
+def crear_mercado_para_contratar() -> tuple[EstadoClan, list[AventureroActivo]]:
+    """Crea un clan de nivel dos con dos contrataciones disponibles."""
+
+    estado: EstadoClan = crear_estado_inicial_clan("Clan Alba")
+    estado["nivel"] = 2
+    estado["dinero"] = 100
+    estado["contrataciones_restantes"] = 2
+    estado["ofertas_reclutamiento"] = [
+        {
+            "id_oferta": "OF-01",
+            "nombre": "Aldren",
+            "plantilla_id": "PLANTILLA_SOLDADO",
+            "nivel": 2,
+            "coste": 20,
+        },
+        {
+            "id_oferta": "OF-02",
+            "nombre": "Aelira",
+            "plantilla_id": "PLANTILLA_ARQUERO",
+            "nivel": 1,
+            "coste": 10,
+        },
+    ]
+    activos: list[AventureroActivo] = crear_aventureros_iniciales(Random(3))
+    return estado, activos
+
+
+def crear_clan_con_cupo_completo(
+    estado_aventurero: EstadoAventurero,
+) -> tuple[EstadoClan, list[AventureroActivo]]:
+    """Crea diez aventureros vivos o muertos en un clan de nivel dos."""
+
+    estado, _ = crear_mercado_para_contratar()
+    estado["siguiente_id_aventurero"] = 11
+    activos: list[AventureroActivo] = []
+    for numero in range(1, 11):
+        aventurero: AventureroActivo = {
+            "id": f"AV-{numero:04d}",
+            "nombre": f"Integrante {numero}",
+            "plantilla_id": "PLANTILLA_SOLDADO",
+            "nivel": 1,
+            "experiencia": 0,
+            "estado": estado_aventurero,
+        }
+        activos.append(aventurero)
+    return estado, activos
 
 
 class PruebasProgresionMercado(unittest.TestCase):
@@ -155,6 +215,140 @@ class PruebasRenovacionMercado(unittest.TestCase):
                 for oferta in estado["ofertas_reclutamiento"]
             ],
             ["OF-01", "OF-02", "OF-03", "OF-04", "OF-05", "OF-06"],
+        )
+
+
+class PruebasContratacionCorrecta(unittest.TestCase):
+    """Comprueba todos los cambios producidos por una contratación válida."""
+
+    def test_contrata_y_actualiza_el_estado_completo(self) -> None:
+        estado, activos = crear_mercado_para_contratar()
+
+        contratado = contratar_aventurero(estado, activos, "OF-01")
+
+        esperado: AventureroActivo = {
+            "id": "AV-0004",
+            "nombre": "Aldren",
+            "plantilla_id": "PLANTILLA_SOLDADO",
+            "nivel": 2,
+            "experiencia": 0,
+            "estado": "vivo",
+        }
+        self.assertEqual(contratado, esperado)
+        self.assertEqual(activos[-1], esperado)
+        self.assertEqual(len(activos), 4)
+        self.assertEqual(estado["dinero"], 80)
+        self.assertEqual(estado["siguiente_id_aventurero"], 5)
+        self.assertEqual(estado["contrataciones_restantes"], 1)
+        self.assertEqual(
+            [
+                oferta["id_oferta"]
+                for oferta in estado["ofertas_reclutamiento"]
+            ],
+            ["OF-02"],
+        )
+
+    def test_permite_una_segunda_contratacion_disponible(self) -> None:
+        estado, activos = crear_mercado_para_contratar()
+
+        primero = contratar_aventurero(estado, activos, "OF-01")
+        segundo = contratar_aventurero(estado, activos, "OF-02")
+
+        self.assertEqual(primero["id"], "AV-0004")
+        self.assertEqual(segundo["id"], "AV-0005")
+        self.assertEqual(len(activos), 5)
+        self.assertEqual(estado["dinero"], 70)
+        self.assertEqual(estado["siguiente_id_aventurero"], 6)
+        self.assertEqual(estado["contrataciones_restantes"], 0)
+        self.assertEqual(estado["ofertas_reclutamiento"], [])
+
+
+class PruebasErroresContratacion(unittest.TestCase):
+    """Comprueba los errores de dominio y la ausencia de cambios parciales."""
+
+    def comprobar_error_sin_mutaciones(
+        self,
+        tipo_error: type[Exception],
+        estado: EstadoClan,
+        activos: list[AventureroActivo],
+        id_oferta: str = "OF-01",
+    ) -> None:
+        """Verifica que un error conserve exactamente ambas estructuras."""
+
+        estado_anterior: EstadoClan = deepcopy(estado)
+        activos_anteriores: list[AventureroActivo] = deepcopy(activos)
+
+        with self.assertRaises(tipo_error):
+            contratar_aventurero(estado, activos, id_oferta)
+
+        self.assertEqual(estado, estado_anterior)
+        self.assertEqual(activos, activos_anteriores)
+
+    def test_rechaza_una_oferta_inexistente_sin_consumir_recursos(self) -> None:
+        estado, activos = crear_mercado_para_contratar()
+        estado["contrataciones_restantes"] = 0
+
+        self.comprobar_error_sin_mutaciones(
+            OfertaNoEncontradaError,
+            estado,
+            activos,
+            "OF-INEXISTENTE",
+        )
+
+    def test_rechaza_un_mercado_agotado_sin_consumir_recursos(self) -> None:
+        estado, activos = crear_mercado_para_contratar()
+        estado["contrataciones_restantes"] = 0
+
+        self.comprobar_error_sin_mutaciones(
+            MercadoAgotadoError,
+            estado,
+            activos,
+        )
+
+    def test_rechaza_dinero_insuficiente_sin_consumir_recursos(self) -> None:
+        estado, activos = crear_mercado_para_contratar()
+        estado["dinero"] = 19
+
+        self.comprobar_error_sin_mutaciones(
+            DineroInsuficienteError,
+            estado,
+            activos,
+        )
+
+    def test_rechaza_cupo_lleno_con_vivos_o_muertos_sin_mutaciones(self) -> None:
+        for estado_aventurero in ("vivo", "muerto"):
+            with self.subTest(estado_aventurero=estado_aventurero):
+                estado, activos = crear_clan_con_cupo_completo(
+                    estado_aventurero
+                )
+
+                self.comprobar_error_sin_mutaciones(
+                    CupoClanCompletoError,
+                    estado,
+                    activos,
+                )
+
+    def test_permite_contratar_la_misma_oferta_tras_liberar_cupo(self) -> None:
+        estado, activos = crear_clan_con_cupo_completo("muerto")
+        self.comprobar_error_sin_mutaciones(
+            CupoClanCompletoError,
+            estado,
+            activos,
+        )
+
+        activos.pop()
+        contratado = contratar_aventurero(estado, activos, "OF-01")
+
+        self.assertEqual(contratado["id"], "AV-0011")
+        self.assertEqual(len(activos), 10)
+        self.assertEqual(estado["dinero"], 80)
+        self.assertEqual(estado["contrataciones_restantes"], 1)
+        self.assertEqual(
+            [
+                oferta["id_oferta"]
+                for oferta in estado["ofertas_reclutamiento"]
+            ],
+            ["OF-02"],
         )
 
 
