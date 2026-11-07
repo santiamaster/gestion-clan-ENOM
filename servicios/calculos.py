@@ -193,6 +193,28 @@ def calcular_coste_contratacion(coste_base: int, nivel: int) -> int:
     return coste_base * nivel
 
 
+def aplicar_descuento_resurreccion(coste_contratacion: int) -> int:
+    """Calcula el 70% del coste de contratación equivalente.
+
+    El resultado se redondea hacia abajo mediante división entera, de acuerdo
+    con la regla general de ENOM.
+
+    Args:
+        coste_contratacion: Precio de contratar al mismo aventurero y nivel.
+
+    Returns:
+        El coste de resurrección con un descuento del 30%.
+
+    Raises:
+        ValueError: Si el coste de contratación recibido es negativo.
+    """
+
+    if coste_contratacion < 0:
+        raise ValueError("El coste de contratación no puede ser negativo.")
+
+    return coste_contratacion * 70 // 100
+
+
 def calcular_probabilidad_critico(critico_adicional: int) -> int:
     """Calcula la probabilidad crítica total de un aventurero.
 
