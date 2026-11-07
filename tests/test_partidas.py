@@ -36,7 +36,7 @@ class PruebasConstruccionClan(unittest.TestCase):
                 "nivel": 1,
                 "dinero": 0,
                 "siguiente_id_aventurero": 4,
-                "estado_mercado": "disponible",
+                "contrataciones_restantes": 0,
                 "estado_partida": "en_curso",
                 "mazmorras_completadas": {
                     "mazmorra_1": False,
@@ -99,6 +99,30 @@ class PruebasConstruccionAventureros(unittest.TestCase):
 
 class PruebasCreacionPartida(unittest.TestCase):
     """Comprueba la coordinación y la protección de los archivos guardados."""
+
+    def test_crea_y_persiste_el_mercado_inicial(self) -> None:
+        with TemporaryDirectory() as temporal:
+            directorio = Path(temporal) / "partida"
+
+            creada = crear_nueva_partida(
+                "Guardianes del Alba",
+                False,
+                directorio,
+                Random(7),
+            )
+            estado = creada[0]
+            estado_recargado = cargar_partida(directorio)[0]
+
+            self.assertEqual(estado["contrataciones_restantes"], 1)
+            self.assertEqual(len(estado["ofertas_reclutamiento"]), 2)
+            self.assertEqual(
+                [
+                    oferta["id_oferta"]
+                    for oferta in estado["ofertas_reclutamiento"]
+                ],
+                ["OF-01", "OF-02"],
+            )
+            self.assertEqual(estado_recargado, estado)
 
     def test_guarda_y_recarga_los_tres_archivos_iniciales(self) -> None:
         with TemporaryDirectory() as temporal:

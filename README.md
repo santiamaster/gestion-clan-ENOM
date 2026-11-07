@@ -6,14 +6,30 @@ El programa permitirá administrar un clan de aventureros de ENOM, reclutar inte
 
 ## Estado del proyecto
 
-El proyecto se encuentra en la etapa de diseño y construcción de sus modelos. Ya están definidos:
+El proyecto se encuentra en la etapa de construcción de sus modelos y
+servicios principales. Ya están definidos:
 
 - Los tipos compartidos y estructuras `TypedDict`.
 - Las quince plantillas de aventureros.
 - Las quince habilidades profesionales.
 - Las reglas principales de progresión, combate y persistencia.
+- La creación y el guardado seguro de una partida nueva.
+- La generación, renovación y contratación del mercado de aventureros.
 
-La interfaz, el motor de combate, los enemigos y las mazmorras todavía están pendientes.
+La interfaz, el motor de combate, los enemigos, las mazmorras y la conexión
+entre expediciones y renovaciones del mercado todavía están pendientes.
+
+## Reclutamiento implementado
+
+El gremio genera el doble de candidatos que el nivel actual del clan y
+permite contratar, como máximo, una cantidad igual a ese nivel. Cada oferta
+incluye un nombre, una de las quince plantillas, un nivel posible y el coste
+calculado según su profesión.
+
+Las contrataciones comprueban antes de modificar el estado que la oferta
+exista, que queden contrataciones disponibles, que haya cupo y que el clan
+disponga del dinero necesario. Los aventureros muertos que todavía pertenecen
+al clan también ocupan cupo.
 
 ## Tecnologías
 
@@ -46,6 +62,6 @@ La descripción completa de cada módulo se encuentra en `documentacion/estructu
 La aplicación todavía no tiene una versión jugable. Durante esta etapa se pueden ejecutar las pruebas con:
 
 ```bash
-python -m unittest
+python -m unittest discover -s tests -v
 ```
 

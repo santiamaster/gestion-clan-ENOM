@@ -39,6 +39,36 @@
 - La iglesia permite revivirlos o enterrarlos con honores.
 - Alcanzar el nivel 5 del clan representa la victoria.
 
+## Reclutamiento
+
+| Nivel del clan | Ofertas por renovación | Contrataciones máximas | Niveles ofrecidos | Cupo |
+|---:|---:|---:|---:|---:|
+| 1 | 2 | 1 | 1 | 5 |
+| 2 | 4 | 2 | 1–2 | 10 |
+| 3 | 6 | 3 | 1–3 | 15 |
+| 4 | 8 | 4 | 1–4 | 20 |
+| 5 | 10 | 5 | 1–5 | 25 |
+
+- Las plantillas se eligen con reemplazo, por lo que pueden aparecer varias
+  ofertas de una misma profesión.
+- El nombre se elige según el sexo definido por la plantilla.
+- El coste es `coste_base × nivel del candidato`.
+- Los identificadores temporales se reinician en cada renovación desde
+  `OF-01`.
+- `contrataciones_restantes` es la única fuente de verdad sobre cuántos
+  candidatos todavía pueden contratarse.
+- La contratación solo se realiza si la oferta existe, queda una contratación,
+  hay cupo y alcanza el dinero.
+- Una contratación fallida conserva sin cambios el dinero, el siguiente ID,
+  el contador, las ofertas y los aventureros activos.
+- Los vivos y los muertos que continúan en el clan ocupan cupo por igual.
+- Liberar cupo permite volver a intentar la contratación con la misma oferta.
+- Una partida nueva guarda dos ofertas iniciales y una contratación disponible.
+- Al terminar una expedición se deberá reemplazar completamente el mercado y
+  restablecer el contador según el nivel actual del clan. El servicio de
+  renovación ya está implementado; su llamada quedará integrada cuando se
+  desarrolle el flujo de expediciones.
+
 ## Cálculos base implementados
 
 Las funciones puras de `servicios/calculos.py` resuelven actualmente:
@@ -66,6 +96,11 @@ bloques correspondientes al sistema de combate.
 - El guardado utiliza archivos temporales y codificación UTF-8.
 - Los nombres con tildes y otros caracteres se conservan directamente.
 - La eliminación afecta solamente a los tres archivos conocidos.
+- El mercado, sus ofertas y las contrataciones restantes forman parte del
+  estado persistente del clan.
+- Las partidas del esquema anterior que solo contienen `estado_mercado` se
+  rechazan de forma controlada; no se realiza una migración automática durante
+  esta etapa del desarrollo.
 - La interfaz será responsable de transformar estas excepciones en mensajes para
   el jugador.
 

@@ -29,7 +29,7 @@ def crear_estado_inicial_clan(nombre_clan: str) -> EstadoClan:
         "nivel": 1,
         "dinero": 0,
         "siguiente_id_aventurero": 4,
-        "estado_mercado": "disponible",
+        "contrataciones_restantes": 0,
         "estado_partida": "en_curso",
         "mazmorras_completadas": {
             "mazmorra_1": False,
