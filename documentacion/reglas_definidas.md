@@ -69,6 +69,33 @@
   renovación ya está implementado; su llamada quedará integrada cuando se
   desarrolle el flujo de expediciones.
 
+## Iglesia
+
+- Un muerto recuperado permanece en `datos_activos`, conserva todos sus datos
+  y continúa ocupando un lugar del cupo.
+- Si todo el grupo muere, los cuerpos no se recuperan. Esos aventureros pasan
+  al historial con el motivo `caido_no_recuperado` y no pueden resucitarse.
+- Los cuerpos recuperados se seleccionan mediante su identificador interno.
+  La búsqueda ignora espacios exteriores y diferencias entre mayúsculas y
+  minúsculas.
+- El coste de resurrección se obtiene sin definir un precio base nuevo:
+
+  ```text
+  coste_contratacion_equivalente × 70 // 100
+  ```
+
+- La división entera redondea el coste hacia abajo según la regla general de
+  ENOM.
+- Resucitar cambia únicamente el estado a `vivo`, descuenta el dinero y
+  conserva ID, nombre, plantilla, nivel y experiencia.
+- Si el clan no posee dinero suficiente, no se modifica el dinero ni el
+  aventurero.
+- Enterrar un cuerpo es gratuito, lo elimina de `datos_activos`, libera cupo y
+  agrega al historial un registro con `enterrado_con_honores`.
+- El memorial incluye `enterrado_con_honores` y `caido_no_recuperado` en su
+  orden histórico. Excluye las bajas con `servicios_finalizados`, porque esos
+  aventureros abandonaron el clan con vida.
+
 ## Cálculos base implementados
 
 Las funciones puras de `servicios/calculos.py` resuelven actualmente:
@@ -77,6 +104,7 @@ Las funciones puras de `servicios/calculos.py` resuelven actualmente:
 - Experiencia necesaria, ascensos múltiples y experiencia sobrante.
 - Cupo del clan según su nivel.
 - Coste de contratación según profesión y nivel.
+- Descuento del coste de resurrección con redondeo hacia abajo.
 - Probabilidad crítica total.
 - Daño modificado por efectividad y crítico.
 

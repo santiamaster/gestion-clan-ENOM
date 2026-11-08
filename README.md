@@ -15,6 +15,7 @@ servicios principales. Ya están definidos:
 - Las reglas principales de progresión, combate y persistencia.
 - La creación y el guardado seguro de una partida nueva.
 - La generación, renovación y contratación del mercado de aventureros.
+- La consulta, resurrección y sepultura de aventureros caídos.
 
 La interfaz, el motor de combate, los enemigos, las mazmorras y la conexión
 entre expediciones y renovaciones del mercado todavía están pendientes.
@@ -30,6 +31,18 @@ Las contrataciones comprueban antes de modificar el estado que la oferta
 exista, que queden contrataciones disponibles, que haya cupo y que el clan
 disponga del dinero necesario. Los aventureros muertos que todavía pertenecen
 al clan también ocupan cupo.
+
+## Iglesia implementada
+
+La iglesia consulta los cuerpos recuperados que permanecen en el clan y
+permite resucitarlos o enterrarlos con honores. La resurrección cuesta el 70%
+de la contratación equivalente, conserva la identidad y el progreso del
+aventurero y solo se realiza cuando el clan posee dinero suficiente.
+
+El entierro traslada al muerto al historial de eliminados y libera su lugar en
+el cupo. El memorial conserva el orden de los aventureros enterrados y de los
+caídos cuyos cuerpos no pudieron recuperarse, sin mezclar a quienes dejaron el
+clan con vida.
 
 ## Tecnologías
 

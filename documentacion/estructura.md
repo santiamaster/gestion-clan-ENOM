@@ -24,7 +24,9 @@ Los servicios contienen las reglas y no deben depender de Tkinter.
 - `clan.py`: nivel, cupo, dinero y victoria o derrota.
 - `aventureros.py`: altas, búsquedas y bajas.
 - `reclutamiento.py`: ofertas y contrataciones.
-- `iglesia.py`: resurrecciones y entierros.
+- `iglesia.py`: consulta cuerpos recuperados, calcula costes, resucita,
+  entierra y filtra el memorial histórico. Modifica las estructuras recibidas
+  en memoria, pero no lee ni guarda archivos JSON directamente.
 - `combate.py`: rondas, ataques y habilidades.
 - `expediciones.py`: oleadas, botín y retirada.
 - `validaciones.py`: conversión segura de datos externos a los tipos del dominio.
