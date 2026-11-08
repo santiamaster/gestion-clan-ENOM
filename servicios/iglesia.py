@@ -1,7 +1,12 @@
 """Consulta, resurrección y entierro de aventureros caídos."""
 
 from catalogos.plantillas import CATALOGO_PLANTILLAS
-from modelos.tipos import AventureroActivo, EstadoClan, PlantillaAventurero
+from modelos.tipos import (
+    AventureroActivo,
+    AventureroEliminado,
+    EstadoClan,
+    PlantillaAventurero,
+)
 from servicios.calculos import (
     aplicar_descuento_resurreccion,
     calcular_coste_contratacion,
@@ -143,4 +148,77 @@ def resucitar_aventurero(
     estado_clan["dinero"] -= coste
     aventurero["estado"] = "vivo"
     return aventurero
+
+
+def enterrar_aventurero(
+    datos_activos: list[AventureroActivo],
+    datos_eliminados: list[AventureroEliminado],
+    aventurero_id: str,
+) -> AventureroEliminado:
+    """Entierra un cuerpo recuperado y libera su lugar en el clan.
+
+    La existencia y el estado del aventurero se validan antes de modificar
+    cualquiera de las listas. El registro histórico se agrega al final para
+    conservar el orden en que ocurrieron las bajas.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que actualmente ocupan
+            cupo.
+        datos_eliminados: Historial ordenado de integrantes fuera del clan.
+        aventurero_id: Identificador del muerto que se desea enterrar.
+
+    Returns:
+        Un registro nuevo con el motivo ``"enterrado_con_honores"``.
+
+    Raises:
+        AventureroNoEncontradoError: Si el ID no pertenece a un integrante.
+        AventureroNoEstaMuertoError: Si el integrante encontrado está vivo.
+    """
+
+    aventurero: AventureroActivo = buscar_aventurero_muerto(
+        datos_activos,
+        aventurero_id,
+    )
+    eliminado: AventureroEliminado = {
+        "id": aventurero["id"],
+        "nombre": aventurero["nombre"],
+        "plantilla_id": aventurero["plantilla_id"],
+        "nivel": aventurero["nivel"],
+        "experiencia": aventurero["experiencia"],
+        "estado": aventurero["estado"],
+        "motivo_baja": "enterrado_con_honores",
+    }
+
+    datos_eliminados.append(eliminado)
+    datos_activos.remove(aventurero)
+    return eliminado
+
+
+def listar_caidos_historicos(
+    datos_eliminados: list[AventureroEliminado],
+) -> list[AventureroEliminado]:
+    """Devuelve el memorial ordenado de aventureros muertos.
+
+    Los integrantes que dejaron el clan con vida por finalización de sus
+    servicios permanecen en el historial general, pero no pertenecen al
+    memorial de la iglesia.
+
+    Args:
+        datos_eliminados: Historial completo de integrantes fuera del clan.
+
+    Returns:
+        Una lista nueva con entierros y caídos cuyos cuerpos no se recuperaron.
+    """
+
+    return [
+        aventurero
+        for aventurero in datos_eliminados
+        if (
+            aventurero["motivo_baja"]
+            in (
+                "enterrado_con_honores",
+                "caido_no_recuperado",
+            )
+        )
+    ]
 

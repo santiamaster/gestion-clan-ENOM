@@ -3,7 +3,13 @@
 import unittest
 from copy import deepcopy
 
-from modelos.tipos import AventureroActivo, EstadoAventurero, EstadoClan
+from modelos.tipos import (
+    AventureroActivo,
+    AventureroEliminado,
+    EstadoAventurero,
+    EstadoClan,
+    MotivoBaja,
+)
 from servicios.calculos import aplicar_descuento_resurreccion
 from servicios.clan import crear_estado_inicial_clan
 from servicios.iglesia import (
@@ -12,6 +18,8 @@ from servicios.iglesia import (
     DineroInsuficienteResurreccionError,
     buscar_aventurero_muerto,
     calcular_coste_resurreccion,
+    enterrar_aventurero,
+    listar_caidos_historicos,
     listar_aventureros_muertos,
     resucitar_aventurero,
 )
@@ -31,6 +39,27 @@ def crear_aventurero(
         "nivel": nivel,
         "experiencia": 0,
         "estado": estado,
+    }
+
+
+def crear_eliminado(
+    identificador: str,
+    motivo_baja: MotivoBaja,
+) -> AventureroEliminado:
+    """Construye un registro histórico controlado para las pruebas."""
+
+    estado: EstadoAventurero = (
+        "vivo" if motivo_baja == "servicios_finalizados" else "muerto"
+    )
+
+    return {
+        "id": identificador,
+        "nombre": f"Integrante {identificador}",
+        "plantilla_id": "PLANTILLA_SOLDADO",
+        "nivel": 1,
+        "experiencia": 0,
+        "estado": estado,
+        "motivo_baja": motivo_baja,
     }
 
 
@@ -216,6 +245,131 @@ class PruebasResurreccion(unittest.TestCase):
                 self.activos,
                 "AV-0001",
             )
+
+
+class PruebasEntierro(unittest.TestCase):
+    """Comprueba la baja definitiva de los cuerpos recuperados."""
+
+    def setUp(self) -> None:
+        """Prepara dos muertos, un vivo y un registro histórico anterior."""
+
+        self.vivo: AventureroActivo = crear_aventurero(
+            "AV-0001",
+            "vivo",
+        )
+        self.muerto_1: AventureroActivo = crear_aventurero(
+            "AV-0002",
+            "muerto",
+        )
+        self.muerto_2: AventureroActivo = crear_aventurero(
+            "AV-0003",
+            "muerto",
+        )
+        self.activos: list[AventureroActivo] = [
+            self.vivo,
+            self.muerto_1,
+            self.muerto_2,
+        ]
+        self.caido_anterior: AventureroEliminado = crear_eliminado(
+            "AV-0000",
+            "caido_no_recuperado",
+        )
+        self.eliminados: list[AventureroEliminado] = [
+            self.caido_anterior,
+        ]
+
+    def test_entierra_muerto_y_libera_cupo(self) -> None:
+        """Evita conservar en activos un cuerpo que ya fue enterrado."""
+
+        eliminado = enterrar_aventurero(
+            self.activos,
+            self.eliminados,
+            "AV-0002",
+        )
+
+        self.assertNotIn(self.muerto_1, self.activos)
+        self.assertEqual(len(self.activos), 2)
+        self.assertEqual(eliminado["motivo_baja"], "enterrado_con_honores")
+        self.assertEqual(self.eliminados[-1], eliminado)
+        self.assertNotIn("motivo_baja", self.muerto_1)
+
+    def test_conserva_orden_historico_de_entierros(self) -> None:
+        """Evita insertar entierros nuevos antes de registros anteriores."""
+
+        enterrar_aventurero(self.activos, self.eliminados, "AV-0002")
+        enterrar_aventurero(self.activos, self.eliminados, "AV-0003")
+
+        self.assertEqual(
+            [registro["id"] for registro in self.eliminados],
+            ["AV-0000", "AV-0002", "AV-0003"],
+        )
+
+    def test_rechaza_vivo_sin_modificar_listas(self) -> None:
+        """Impide enterrar a un integrante vivo o alterar los registros."""
+
+        activos_antes: list[AventureroActivo] = deepcopy(self.activos)
+        eliminados_antes: list[AventureroEliminado] = deepcopy(
+            self.eliminados
+        )
+
+        with self.assertRaises(AventureroNoEstaMuertoError):
+            enterrar_aventurero(
+                self.activos,
+                self.eliminados,
+                "AV-0001",
+            )
+
+        self.assertEqual(self.activos, activos_antes)
+        self.assertEqual(self.eliminados, eliminados_antes)
+
+    def test_rechaza_id_inexistente_sin_modificar_listas(self) -> None:
+        """Impide crear una baja cuando el identificador no existe."""
+
+        activos_antes: list[AventureroActivo] = deepcopy(self.activos)
+        eliminados_antes: list[AventureroEliminado] = deepcopy(
+            self.eliminados
+        )
+
+        with self.assertRaises(AventureroNoEncontradoError):
+            enterrar_aventurero(
+                self.activos,
+                self.eliminados,
+                "AV-9999",
+            )
+
+        self.assertEqual(self.activos, activos_antes)
+        self.assertEqual(self.eliminados, eliminados_antes)
+
+
+class PruebasMemorial(unittest.TestCase):
+    """Comprueba el historial de aventureros muertos fuera del clan."""
+
+    def test_filtra_caidos_en_orden_y_devuelve_lista_nueva(self) -> None:
+        """Evita mostrar expulsados vivos o alterar el historial original."""
+
+        enterrado: AventureroEliminado = crear_eliminado(
+            "AV-0002",
+            "enterrado_con_honores",
+        )
+        expulsado: AventureroEliminado = crear_eliminado(
+            "AV-0003",
+            "servicios_finalizados",
+        )
+        no_recuperado: AventureroEliminado = crear_eliminado(
+            "AV-0004",
+            "caido_no_recuperado",
+        )
+        eliminados: list[AventureroEliminado] = [
+            enterrado,
+            expulsado,
+            no_recuperado,
+        ]
+
+        resultado = listar_caidos_historicos(eliminados)
+
+        self.assertEqual(resultado, [enterrado, no_recuperado])
+        self.assertIsNot(resultado, eliminados)
+        self.assertIs(resultado[0], enterrado)
 
 
 if __name__ == "__main__":
