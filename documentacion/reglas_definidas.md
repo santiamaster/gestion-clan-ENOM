@@ -18,6 +18,9 @@
 - El crítico base es 5% y causa 150% del daño.
 - Los ataques efectivos causan 150%, los neutrales 100% y los inefectivos 50%.
 - Los multiplicadores de efectividad y crítico se combinan antes de redondear.
+- Los enemigos usan el crítico base del 5% sin modificadores adicionales.
+- Los enemigos eligen al azar entre los aventureros vivos, salvo que una
+  habilidad como `Provocar` o `Proteger` cambie el objetivo.
 - Por regla general, todo resultado decimal se redondea hacia abajo.
 - La vida no se recupera entre oleadas.
 - Los enfriamientos se conservan durante toda la expedición.
@@ -28,7 +31,10 @@
 - Hay cinco dificultades y diez oleadas por mazmorra.
 - Después de cada oleada el jugador puede continuar o regresar.
 - El dinero y la experiencia se obtienen si al menos un aventurero regresa vivo.
-- La experiencia se reparte solamente entre los supervivientes.
+- Cada enemigo derrotado agrega su recompensa a un pozo común de experiencia.
+- Al terminar la expedición, el pozo se divide en partes iguales entre quienes
+  regresen vivos. La división entera redondea hacia abajo y descarta el
+  sobrante.
 - Una derrota total pierde el botín y los cuerpos no pueden recuperarse.
 
 ## Clan
