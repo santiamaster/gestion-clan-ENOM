@@ -7,6 +7,60 @@ from catalogos.plantillas import CATALOGO_PLANTILLAS, PLANTILLAS_INICIALES
 from modelos.tipos import AventureroActivo, PlantillaAventurero
 
 
+class AventureroNoEncontradoError(ValueError):
+    """Indica que el ID no pertenece a un integrante activo del clan."""
+
+
+def normalizar_id_aventurero(aventurero_id: str) -> str:
+    """Normaliza un identificador escrito por el usuario.
+
+    Args:
+        aventurero_id: Identificador que puede contener espacios exteriores o
+            letras minúsculas.
+
+    Returns:
+        El identificador sin espacios exteriores y en mayúsculas.
+    """
+
+    return aventurero_id.strip().upper()
+
+
+def buscar_aventurero_activo(
+    datos_activos: list[AventureroActivo],
+    aventurero_id: str,
+) -> AventureroActivo:
+    """Busca un integrante activo mediante su identificador interno.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que todavía ocupan cupo.
+        aventurero_id: Identificador que será normalizado antes de buscar.
+
+    Returns:
+        El registro original existente dentro de ``datos_activos``.
+
+    Raises:
+        AventureroNoEncontradoError: Si el ID no pertenece a un integrante.
+    """
+
+    identificador_normalizado: str = normalizar_id_aventurero(aventurero_id)
+    aventurero: AventureroActivo | None = next(
+        (
+            integrante
+            for integrante in datos_activos
+            if integrante["id"] == identificador_normalizado
+        ),
+        None,
+    )
+
+    if aventurero is None:
+        raise AventureroNoEncontradoError(
+            f"No existe un aventurero activo con el ID "
+            f"'{identificador_normalizado}'."
+        )
+
+    return aventurero
+
+
 def formatear_id_aventurero(numero: int) -> str:
     """Convierte un número positivo al identificador interno del aventurero.
 

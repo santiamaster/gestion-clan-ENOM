@@ -11,10 +11,10 @@ from servicios.calculos import (
     aplicar_descuento_resurreccion,
     calcular_coste_contratacion,
 )
-
-
-class AventureroNoEncontradoError(ValueError):
-    """Indica que el ID no pertenece a un integrante activo del clan."""
+from servicios.aventureros import (
+    AventureroNoEncontradoError,
+    buscar_aventurero_activo,
+)
 
 
 class AventureroNoEstaMuertoError(ValueError):
@@ -63,24 +63,13 @@ def buscar_aventurero_muerto(
         AventureroNoEstaMuertoError: Si el integrante encontrado está vivo.
     """
 
-    identificador_normalizado: str = aventurero_id.strip().upper()
-    aventurero: AventureroActivo | None = next(
-        (
-            integrante
-            for integrante in datos_activos
-            if integrante["id"] == identificador_normalizado
-        ),
-        None,
+    aventurero: AventureroActivo = buscar_aventurero_activo(
+        datos_activos,
+        aventurero_id,
     )
-
-    if aventurero is None:
-        raise AventureroNoEncontradoError(
-            f"No existe un aventurero activo con el ID "
-            f"'{identificador_normalizado}'."
-        )
     if aventurero["estado"] != "muerto":
         raise AventureroNoEstaMuertoError(
-            f"El aventurero '{identificador_normalizado}' no está muerto."
+            f"El aventurero '{aventurero['id']}' no está muerto."
         )
 
     return aventurero

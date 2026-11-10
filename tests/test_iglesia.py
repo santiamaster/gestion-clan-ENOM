@@ -3,6 +3,7 @@
 import unittest
 from copy import deepcopy
 
+import servicios.aventureros as servicio_aventureros
 from modelos.tipos import (
     AventureroActivo,
     AventureroEliminado,
@@ -117,6 +118,14 @@ class PruebasConsultaCuerpos(unittest.TestCase):
 
         with self.assertRaises(AventureroNoEstaMuertoError):
             buscar_aventurero_muerto(self.activos, "AV-0001")
+
+    def test_conserva_identidad_publica_del_error_no_encontrado(self) -> None:
+        """Evita romper imports existentes al centralizar la búsqueda."""
+
+        self.assertIs(
+            AventureroNoEncontradoError,
+            servicio_aventureros.AventureroNoEncontradoError,
+        )
 
 
 class PruebasCosteResurreccion(unittest.TestCase):
