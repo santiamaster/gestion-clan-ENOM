@@ -45,6 +45,42 @@
 - La iglesia permite revivirlos o enterrarlos con honores.
 - Alcanzar el nivel 5 del clan representa la victoria.
 
+## Gestión de aventureros y formación del grupo
+
+- Los integrantes se buscan mediante su identificador interno.
+- La búsqueda normaliza cada ID con `strip().upper()`, por lo que ignora
+  espacios exteriores y diferencias entre mayúsculas y minúsculas.
+- El listado de vivos conserva el orden de `datos_activos`, excluye a los
+  muertos recuperados y devuelve una lista nueva.
+- Expulsar a un aventurero vivo es gratuito y libera su lugar en el clan.
+- La expulsión conserva sus datos en el historial con el motivo
+  `servicios_finalizados`.
+- No se puede expulsar a un muerto mediante la gestión del clan; su salida se
+  resuelve en la iglesia.
+- No se puede expulsar al último aventurero vivo, aunque existan muertos que
+  todavía ocupen cupo.
+- La existencia, el estado y la cantidad de vivos se validan antes de modificar
+  las listas. Una expulsión fallida no altera los registros.
+
+| Nivel del clan | Máximo del grupo |
+|---:|---:|
+| 1 | 3 |
+| 2 | 4 |
+| 3 | 5 |
+| 4 | 6 |
+| 5 | 7 |
+
+- El grupo puede contener desde un integrante hasta el máximo correspondiente
+  al nivel actual del clan.
+- Solo pueden seleccionarse aventureros vivos que todavía pertenezcan al clan.
+- Un mismo aventurero no puede ocupar dos lugares, incluso si sus IDs fueron
+  escritos con distintos espacios o combinaciones de mayúsculas y minúsculas.
+- La selección conserva el orden elegido por el jugador.
+- El grupo se representa temporalmente mediante una lista de IDs: no forma
+  parte del estado persistente ni modifica las listas recibidas.
+- Los estados temporales de combate se crearán al iniciar la expedición y no
+  forman parte de este bloque.
+
 ## Reclutamiento
 
 | Nivel del clan | Ofertas por renovación | Contrataciones máximas | Niveles ofrecidos | Cupo |

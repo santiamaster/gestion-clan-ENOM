@@ -22,7 +22,10 @@ Los servicios contienen las reglas y no deben depender de Tkinter.
 - `calculos.py`: estadísticas, experiencia y economía.
 - `persistencia.py`: rutas, carga, guardado y eliminación de la partida JSON.
 - `clan.py`: nivel, cupo, dinero y victoria o derrota.
-- `aventureros.py`: altas, búsquedas y bajas.
+- `aventureros.py`: crea los integrantes iniciales y centraliza la
+  normalización y búsqueda por ID, el listado de vivos, la expulsión segura y
+  la formación temporal del grupo. Opera sobre estructuras en memoria sin
+  depender de Tkinter ni guardar archivos JSON.
 - `reclutamiento.py`: ofertas y contrataciones.
 - `iglesia.py`: consulta cuerpos recuperados, calcula costes, resucita,
   entierra y filtra el memorial histórico. Modifica las estructuras recibidas
