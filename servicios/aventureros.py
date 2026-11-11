@@ -4,11 +4,23 @@ from random import Random
 
 from catalogos.nombres import elegir_nombre
 from catalogos.plantillas import CATALOGO_PLANTILLAS, PLANTILLAS_INICIALES
-from modelos.tipos import AventureroActivo, PlantillaAventurero
+from modelos.tipos import (
+    AventureroActivo,
+    AventureroEliminado,
+    PlantillaAventurero,
+)
 
 
 class AventureroNoEncontradoError(ValueError):
     """Indica que el ID no pertenece a un integrante activo del clan."""
+
+
+class AventureroNoEstaVivoError(ValueError):
+    """Indica que una operación exclusiva para vivos recibió un muerto."""
+
+
+class UltimoAventureroVivoError(ValueError):
+    """Impide expulsar al único integrante vivo que queda en el clan."""
 
 
 def normalizar_id_aventurero(aventurero_id: str) -> str:
@@ -59,6 +71,108 @@ def buscar_aventurero_activo(
         )
 
     return aventurero
+
+
+def listar_aventureros_vivos(
+    datos_activos: list[AventureroActivo],
+) -> list[AventureroActivo]:
+    """Lista los integrantes vivos que todavía pertenecen al clan.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que actualmente ocupan
+            cupo.
+
+    Returns:
+        Una lista nueva con referencias a los vivos, en su orden original.
+    """
+
+    return [
+        aventurero
+        for aventurero in datos_activos
+        if aventurero["estado"] == "vivo"
+    ]
+
+
+def buscar_aventurero_vivo(
+    datos_activos: list[AventureroActivo],
+    aventurero_id: str,
+) -> AventureroActivo:
+    """Busca por ID un integrante vivo del clan.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que actualmente ocupan
+            cupo.
+        aventurero_id: Identificador que será normalizado antes de buscar.
+
+    Returns:
+        El registro original del aventurero vivo.
+
+    Raises:
+        AventureroNoEncontradoError: Si el ID no pertenece a un integrante.
+        AventureroNoEstaVivoError: Si el integrante encontrado está muerto.
+    """
+
+    aventurero: AventureroActivo = buscar_aventurero_activo(
+        datos_activos,
+        aventurero_id,
+    )
+    if aventurero["estado"] != "vivo":
+        raise AventureroNoEstaVivoError(
+            f"El aventurero '{aventurero['id']}' no está vivo."
+        )
+
+    return aventurero
+
+
+def expulsar_aventurero(
+    datos_activos: list[AventureroActivo],
+    datos_eliminados: list[AventureroEliminado],
+    aventurero_id: str,
+) -> AventureroEliminado:
+    """Expulsa a un integrante vivo sin dejar al clan sin miembros vivos.
+
+    La existencia, el estado y la cantidad de integrantes vivos se validan
+    antes de modificar las listas. La baja se guarda como un registro
+    independiente al final del historial.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que actualmente ocupan
+            cupo.
+        datos_eliminados: Historial ordenado de integrantes fuera del clan.
+        aventurero_id: Identificador del vivo que se desea expulsar.
+
+    Returns:
+        El registro histórico nuevo con sus datos y el motivo de la baja.
+
+    Raises:
+        AventureroNoEncontradoError: Si el ID no pertenece a un integrante.
+        AventureroNoEstaVivoError: Si el integrante encontrado está muerto.
+        UltimoAventureroVivoError: Si es el único vivo que queda en el clan.
+    """
+
+    aventurero: AventureroActivo = buscar_aventurero_vivo(
+        datos_activos,
+        aventurero_id,
+    )
+    vivos: list[AventureroActivo] = listar_aventureros_vivos(datos_activos)
+    if len(vivos) <= 1:
+        raise UltimoAventureroVivoError(
+            "No se puede expulsar al último aventurero vivo del clan."
+        )
+
+    eliminado: AventureroEliminado = {
+        "id": aventurero["id"],
+        "nombre": aventurero["nombre"],
+        "plantilla_id": aventurero["plantilla_id"],
+        "nivel": aventurero["nivel"],
+        "experiencia": aventurero["experiencia"],
+        "estado": aventurero["estado"],
+        "motivo_baja": "servicios_finalizados",
+    }
+
+    datos_eliminados.append(eliminado)
+    datos_activos.remove(aventurero)
+    return eliminado
 
 
 def formatear_id_aventurero(numero: int) -> str:
