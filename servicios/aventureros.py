@@ -4,6 +4,7 @@ from random import Random
 
 from catalogos.nombres import elegir_nombre
 from catalogos.plantillas import CATALOGO_PLANTILLAS, PLANTILLAS_INICIALES
+from configuracion import MAXIMO_INTEGRANTES_GRUPO, NIVEL_MAXIMO_CLAN
 from modelos.tipos import (
     AventureroActivo,
     AventureroEliminado,
@@ -21,6 +22,18 @@ class AventureroNoEstaVivoError(ValueError):
 
 class UltimoAventureroVivoError(ValueError):
     """Impide expulsar al único integrante vivo que queda en el clan."""
+
+
+class GrupoVacioError(ValueError):
+    """Indica que una expedición no posee aventureros seleccionados."""
+
+
+class GrupoExcedeLimiteError(ValueError):
+    """Indica que el grupo supera el máximo permitido por el clan."""
+
+
+class AventureroRepetidoEnGrupoError(ValueError):
+    """Indica que un integrante fue seleccionado más de una vez."""
 
 
 def normalizar_id_aventurero(aventurero_id: str) -> str:
@@ -173,6 +186,81 @@ def expulsar_aventurero(
     datos_eliminados.append(eliminado)
     datos_activos.remove(aventurero)
     return eliminado
+
+
+def calcular_maximo_grupo(nivel_clan: int) -> int:
+    """Calcula cuántos aventureros puede enviar el clan a una expedición.
+
+    Args:
+        nivel_clan: Nivel actual del clan, comprendido entre uno y cinco.
+
+    Returns:
+        El máximo progresivo de tres a siete integrantes.
+
+    Raises:
+        ValueError: Si el nivel no pertenece al intervalo permitido.
+    """
+
+    if not 1 <= nivel_clan <= NIVEL_MAXIMO_CLAN:
+        raise ValueError(
+            f"El nivel del clan debe estar entre 1 y {NIVEL_MAXIMO_CLAN}."
+        )
+
+    return min(nivel_clan + 2, MAXIMO_INTEGRANTES_GRUPO)
+
+
+def seleccionar_grupo(
+    datos_activos: list[AventureroActivo],
+    nivel_clan: int,
+    aventureros_ids: list[str],
+) -> list[AventureroActivo]:
+    """Valida y resuelve una selección temporal para una expedición.
+
+    La selección no se persiste ni modifica sus listas de entrada. El grupo
+    resultante conserva el orden elegido y contiene referencias a los
+    registros originales de los integrantes vivos.
+
+    Args:
+        datos_activos: Integrantes vivos y muertos que ocupan cupo.
+        nivel_clan: Nivel utilizado para calcular el máximo permitido.
+        aventureros_ids: Identificadores elegidos por el jugador.
+
+    Returns:
+        Una lista nueva con los aventureros vivos, en el orden solicitado.
+
+    Raises:
+        ValueError: Si el nivel del clan no es válido.
+        GrupoVacioError: Si no se seleccionó ningún integrante.
+        GrupoExcedeLimiteError: Si la selección supera el máximo permitido.
+        AventureroRepetidoEnGrupoError: Si un ID normalizado está repetido.
+        AventureroNoEncontradoError: Si algún ID no pertenece al clan.
+        AventureroNoEstaVivoError: Si algún integrante está muerto.
+    """
+
+    maximo: int = calcular_maximo_grupo(nivel_clan)
+    if not aventureros_ids:
+        raise GrupoVacioError(
+            "Debe seleccionar al menos un aventurero para la expedición."
+        )
+    if len(aventureros_ids) > maximo:
+        raise GrupoExcedeLimiteError(
+            f"El clan de nivel {nivel_clan} puede enviar como máximo "
+            f"{maximo} aventureros."
+        )
+
+    ids_normalizados: list[str] = [
+        normalizar_id_aventurero(aventurero_id)
+        for aventurero_id in aventureros_ids
+    ]
+    if len(set(ids_normalizados)) != len(ids_normalizados):
+        raise AventureroRepetidoEnGrupoError(
+            "Un aventurero no puede ocupar más de un lugar en el grupo."
+        )
+
+    return [
+        buscar_aventurero_vivo(datos_activos, aventurero_id)
+        for aventurero_id in ids_normalizados
+    ]
 
 
 def formatear_id_aventurero(numero: int) -> str:

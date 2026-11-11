@@ -236,5 +236,196 @@ class PruebasExpulsion(unittest.TestCase):
         self.assertEqual(self.eliminados, eliminados_antes)
 
 
+class PruebasFormacionGrupo(unittest.TestCase):
+    """Comprueba la selección temporal del grupo para una expedición."""
+
+    def setUp(self) -> None:
+        """Prepara ocho vivos y un muerto con identificadores correlativos."""
+
+        self.vivos: list[AventureroActivo] = [
+            crear_aventurero(f"AV-{numero:04d}")
+            for numero in range(1, 9)
+        ]
+        self.muerto: AventureroActivo = crear_aventurero(
+            "AV-0009",
+            "muerto",
+        )
+        self.activos: list[AventureroActivo] = [
+            *self.vivos,
+            self.muerto,
+        ]
+
+    def test_calcula_maximo_para_cada_nivel_del_clan(self) -> None:
+        """Evita alterar la progresión aprobada de tres a siete lugares."""
+
+        esperados: dict[int, int] = {1: 3, 2: 4, 3: 5, 4: 6, 5: 7}
+
+        for nivel, maximo_esperado in esperados.items():
+            with self.subTest(nivel=nivel):
+                self.assertEqual(
+                    servicio_aventureros.calcular_maximo_grupo(nivel),
+                    maximo_esperado,
+                )
+
+    def test_rechaza_niveles_del_clan_fuera_del_intervalo(self) -> None:
+        """Impide calcular límites para niveles inexistentes."""
+
+        for nivel in (0, 6):
+            with self.subTest(nivel=nivel):
+                with self.assertRaises(ValueError):
+                    servicio_aventureros.calcular_maximo_grupo(nivel)
+
+    def test_acepta_un_integrante_y_devuelve_el_registro_original(self) -> None:
+        """Confirma el mínimo de uno sin copiar el aventurero seleccionado."""
+
+        seleccion: list[str] = [" av-0003 "]
+
+        resultado: list[AventureroActivo] = (
+            servicio_aventureros.seleccionar_grupo(
+                self.activos,
+                1,
+                seleccion,
+            )
+        )
+
+        self.assertEqual(resultado, [self.vivos[2]])
+        self.assertIs(resultado[0], self.vivos[2])
+        self.assertIsNot(resultado, self.activos)
+
+    def test_acepta_maximo_de_nivel_uno_y_conserva_orden_e_identidad(
+        self,
+    ) -> None:
+        """Evita reordenar o copiar los tres integrantes elegidos."""
+
+        seleccion: list[str] = ["AV-0003", "AV-0001", "AV-0002"]
+        activos_antes: list[AventureroActivo] = deepcopy(self.activos)
+        seleccion_antes: list[str] = seleccion.copy()
+
+        resultado: list[AventureroActivo] = (
+            servicio_aventureros.seleccionar_grupo(
+                self.activos,
+                1,
+                seleccion,
+            )
+        )
+
+        self.assertEqual(
+            resultado,
+            [self.vivos[2], self.vivos[0], self.vivos[1]],
+        )
+        self.assertIs(resultado[0], self.vivos[2])
+        self.assertIs(resultado[1], self.vivos[0])
+        self.assertIs(resultado[2], self.vivos[1])
+        self.assertEqual(self.activos, activos_antes)
+        self.assertEqual(seleccion, seleccion_antes)
+
+    def test_acepta_siete_integrantes_en_nivel_cinco(self) -> None:
+        """Evita aplicar un límite menor al clan de nivel máximo."""
+
+        seleccion: list[str] = [
+            "AV-0001",
+            "AV-0002",
+            "AV-0003",
+            "AV-0004",
+            "AV-0005",
+            "AV-0006",
+            "AV-0007",
+        ]
+
+        resultado: list[AventureroActivo] = (
+            servicio_aventureros.seleccionar_grupo(
+                self.activos,
+                5,
+                seleccion,
+            )
+        )
+
+        self.assertEqual(resultado, self.vivos[:7])
+
+    def test_rechaza_grupo_vacio_sin_modificar_datos(self) -> None:
+        """Impide iniciar una expedición sin aventureros."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.GrupoVacioError,
+            1,
+            [],
+        )
+
+    def test_rechaza_cuatro_integrantes_en_nivel_uno(self) -> None:
+        """Impide superar los tres lugares disponibles inicialmente."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.GrupoExcedeLimiteError,
+            1,
+            ["AV-0001", "AV-0002", "AV-0003", "AV-0004"],
+        )
+
+    def test_rechaza_ocho_integrantes_en_nivel_cinco(self) -> None:
+        """Respeta el tope absoluto de siete participantes de ENOM."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.GrupoExcedeLimiteError,
+            5,
+            [
+                "AV-0001",
+                "AV-0002",
+                "AV-0003",
+                "AV-0004",
+                "AV-0005",
+                "AV-0006",
+                "AV-0007",
+                "AV-0008",
+            ],
+        )
+
+    def test_rechaza_ids_repetidos_despues_de_normalizarlos(self) -> None:
+        """Impide seleccionar dos veces al mismo integrante por formato."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.AventureroRepetidoEnGrupoError,
+            1,
+            ["AV-0001", " av-0001 "],
+        )
+
+    def test_rechaza_id_inexistente_sin_modificar_datos(self) -> None:
+        """Conserva el error de ID cuando el integrante no pertenece al clan."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.AventureroNoEncontradoError,
+            1,
+            ["AV-9999"],
+        )
+
+    def test_rechaza_integrante_muerto_sin_modificar_datos(self) -> None:
+        """Impide enviar a una incursión un cuerpo recuperado."""
+
+        self._comprobar_error_atomico(
+            servicio_aventureros.AventureroNoEstaVivoError,
+            1,
+            ["AV-0009"],
+        )
+
+    def _comprobar_error_atomico(
+        self,
+        error_esperado: type[ValueError],
+        nivel_clan: int,
+        seleccion: list[str],
+    ) -> None:
+        """Verifica que una selección inválida no altere sus entradas."""
+
+        activos_antes: list[AventureroActivo] = deepcopy(self.activos)
+        seleccion_antes: list[str] = seleccion.copy()
+
+        with self.assertRaises(error_esperado):
+            servicio_aventureros.seleccionar_grupo(
+                self.activos,
+                nivel_clan,
+                seleccion,
+            )
+
+        self.assertEqual(self.activos, activos_antes)
+        self.assertEqual(seleccion, seleccion_antes)
+
+
 if __name__ == "__main__":
     unittest.main()
