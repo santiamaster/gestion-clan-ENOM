@@ -13,6 +13,8 @@ from modelos.combate import (
     DefinicionOleada,
     EnemigoCombate,
     ParticipanteTurno,
+    ResultadoAtaque,
+    ResultadoOleada,
     TurnoAventurero,
     TurnoEnemigo,
 )
@@ -41,26 +43,29 @@ class RandomControlado(Random):
         self.tiradas: list[int] = list(tiradas or [])
         self.elecciones: list[int] = list(elecciones or [])
 
-    def randint(self, inicio: int, fin: int) -> int:
+    def randint(self, a: int, b: int) -> int:
         """Consume la siguiente tirada y comprueba el intervalo solicitado."""
 
         if not self.tiradas:
             raise AssertionError("No quedan tiradas d100 configuradas.")
         valor: int = self.tiradas.pop(0)
-        if not inicio <= valor <= fin:
+        if not a <= valor <= b:
             raise AssertionError(
-                f"La tirada {valor} no pertenece a {inicio}..{fin}."
+                f"La tirada {valor} no pertenece a {a}..{b}."
             )
         return valor
 
-    def choice(self, secuencia: Sequence[T]) -> T:
+    def choice(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        seq: Sequence[T],
+    ) -> T:
         """Consume el siguiente índice de elección controlada."""
 
         if not self.elecciones:
             raise AssertionError("No quedan elecciones configuradas.")
         indice: int = self.elecciones.pop(0)
         try:
-            return secuencia[indice]
+            return seq[indice]
         except IndexError as error:
             raise AssertionError(
                 f"El índice controlado {indice} no existe."
@@ -73,7 +78,7 @@ def _operacion(nombre: str) -> Callable[..., object]:
     operacion: object | None = getattr(combate, nombre, None)
     if not callable(operacion):
         raise AssertionError(f"Falta implementar {nombre}().")
-    return cast(Callable[..., object], operacion)
+    return operacion
 
 
 def _aventurero(
@@ -593,11 +598,14 @@ class PruebasAtaquesBasicos(unittest.TestCase):
         ejecutar = _operacion("ejecutar_ataque_basico")
         objetivo: EnemigoCombate = _estado_enemigo()
 
-        resultado = ejecutar(
-            _estado_aventurero(),
-            objetivo,
-            "neutral",
-            RandomControlado(tiradas=[5]),
+        resultado = cast(
+            ResultadoAtaque,
+            ejecutar(
+                _estado_aventurero(),
+                objetivo,
+                "neutral",
+                RandomControlado(tiradas=[5]),
+            ),
         )
 
         self.assertEqual(resultado["resultado"], "critico")
@@ -834,6 +842,218 @@ class PruebasTurnosYRonda(unittest.TestCase):
         self.assertEqual(muerto["vida_actual"], 0)
         self.assertEqual(vivo["vida_actual"], 16)
         self.assertEqual(enemigo["vida_actual"], 19)
+
+
+class PruebasResolucionOleada(unittest.TestCase):
+    """Comprueba resultados, rondas y recompensas de una oleada completa."""
+
+    def test_victoria_acumula_cada_recompensa_una_sola_vez(self) -> None:
+        resolver = _operacion("resolver_oleada")
+        aventurero: AventureroCombate = _estado_aventurero(
+            estrategia="menor_vida_actual"
+        )
+        enemigo_1: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-01",
+            vida_actual=4,
+        )
+        enemigo_1["velocidad"] = 2
+        enemigo_2: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-02",
+            vida_actual=5,
+        )
+        enemigo_2["velocidad"] = 1
+        aventureros: list[AventureroCombate] = [aventurero]
+        enemigos: list[EnemigoCombate] = [enemigo_1, enemigo_2]
+
+        resultado = cast(
+            ResultadoOleada,
+            resolver(
+                aventureros,
+                enemigos,
+                RandomControlado(tiradas=[6, 91, 6], elecciones=[0]),
+            ),
+        )
+
+        self.assertEqual(resultado["resultado"], "victoria")
+        self.assertEqual(resultado["rondas"], 2)
+        self.assertEqual(
+            resultado["enemigos_derrotados"],
+            ["LIMOS_LIMO-01", "LIMOS_LIMO-02"],
+        )
+        self.assertEqual(resultado["experiencia_obtenida"], 20)
+        self.assertEqual(resultado["dinero_obtenido"], 2)
+        self.assertEqual(aventurero["vida_actual"], 20)
+        self.assertIs(resultado["aventureros"], aventureros)
+        self.assertIs(resultado["enemigos"], enemigos)
+
+    def test_derrota_conserva_recompensas_provisionales_anteriores(
+        self,
+    ) -> None:
+        resolver = _operacion("resolver_oleada")
+        aventurero: AventureroCombate = _estado_aventurero(
+            vida_actual=4,
+            estrategia="menor_vida_actual",
+        )
+        enemigo_1: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-01",
+            vida_actual=4,
+        )
+        enemigo_1["velocidad"] = 2
+        enemigo_2: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-02"
+        )
+        enemigo_2["velocidad"] = 1
+
+        resultado = cast(
+            ResultadoOleada,
+            resolver(
+                [aventurero],
+                [enemigo_1, enemigo_2],
+                RandomControlado(tiradas=[6, 6], elecciones=[0]),
+            ),
+        )
+
+        self.assertEqual(resultado["resultado"], "derrota")
+        self.assertEqual(resultado["rondas"], 1)
+        self.assertEqual(
+            resultado["enemigos_derrotados"],
+            ["LIMOS_LIMO-01"],
+        )
+        self.assertEqual(resultado["experiencia_obtenida"], 10)
+        self.assertEqual(resultado["dinero_obtenido"], 1)
+        self.assertEqual(aventurero["vida_actual"], 0)
+        self.assertFalse(aventurero["esta_vivo"])
+
+    def test_limite_de_rondas_conserva_ambos_bandos_vivos(self) -> None:
+        resolver = _operacion("resolver_oleada")
+        aventurero: AventureroCombate = _estado_aventurero()
+        enemigo: EnemigoCombate = _estado_enemigo()
+
+        resultado = cast(
+            ResultadoOleada,
+            resolver(
+                [aventurero],
+                [enemigo],
+                RandomControlado(
+                    tiradas=[91] * 60,
+                    elecciones=[0] * 60,
+                ),
+            ),
+        )
+
+        self.assertEqual(resultado["resultado"], "limite_de_rondas")
+        self.assertEqual(resultado["rondas"], 30)
+        self.assertEqual(resultado["enemigos_derrotados"], [])
+        self.assertEqual(resultado["experiencia_obtenida"], 0)
+        self.assertEqual(resultado["dinero_obtenido"], 0)
+        self.assertTrue(aventurero["esta_vivo"])
+        self.assertTrue(enemigo["esta_vivo"])
+
+    def test_derrotar_ultimo_enemigo_en_ronda_treinta_es_victoria(
+        self,
+    ) -> None:
+        resolver = _operacion("resolver_oleada")
+        aventurero: AventureroCombate = _estado_aventurero()
+        aventurero["dano"] = 0
+        enemigo: EnemigoCombate = _estado_enemigo(vida_actual=20)
+        enemigo["vida_maxima"] = 30
+        enemigo["vida_actual"] = 30
+        tiradas: list[int] = []
+        for _ in range(29):
+            tiradas.extend((6, 91))
+        tiradas.append(6)
+
+        resultado = cast(
+            ResultadoOleada,
+            resolver(
+                [aventurero],
+                [enemigo],
+                RandomControlado(
+                    tiradas=tiradas,
+                    elecciones=[0] * 59,
+                ),
+            ),
+        )
+
+        self.assertEqual(resultado["resultado"], "victoria")
+        self.assertEqual(resultado["rondas"], 30)
+        self.assertEqual(
+            resultado["enemigos_derrotados"],
+            ["LIMOS_LIMO-01"],
+        )
+        self.assertEqual(resultado["experiencia_obtenida"], 10)
+        self.assertEqual(resultado["dinero_obtenido"], 1)
+
+    def test_catalogos_reales_producen_resultado_y_recompensas_validas(
+        self,
+    ) -> None:
+        resolver = _operacion("resolver_oleada")
+        crear_aventurero = _operacion("crear_aventurero_combate")
+        crear_enemigos = _operacion("crear_enemigos_oleada")
+        registros: list[AventureroActivo] = [
+            _aventurero(
+                identificador="AV-0001",
+                plantilla_id="PLANTILLA_SOLDADO",
+            ),
+            _aventurero(
+                identificador="AV-0002",
+                plantilla_id="PLANTILLA_ARQUERO",
+            ),
+            _aventurero(
+                identificador="AV-0003",
+                plantilla_id="PLANTILLA_HECHICERO",
+            ),
+        ]
+        aventureros: list[AventureroCombate] = [
+            cast(
+                AventureroCombate,
+                crear_aventurero(registro, CATALOGO_PLANTILLAS),
+            )
+            for registro in registros
+        ]
+        enemigos = cast(
+            list[EnemigoCombate],
+            crear_enemigos(
+                MAZMORRA_LIMOS["oleadas"][0],
+                CATALOGO_ENEMIGOS,
+            ),
+        )
+
+        resultado = cast(
+            ResultadoOleada,
+            resolver(aventureros, enemigos, Random(20261112)),
+        )
+
+        self.assertIn(
+            resultado["resultado"],
+            {"victoria", "derrota", "limite_de_rondas"},
+        )
+        self.assertGreaterEqual(resultado["rondas"], 1)
+        self.assertLessEqual(resultado["rondas"], 30)
+        for combatiente in [*aventureros, *enemigos]:
+            self.assertGreaterEqual(combatiente["vida_actual"], 0)
+            self.assertLessEqual(
+                combatiente["vida_actual"],
+                combatiente["vida_maxima"],
+            )
+
+        derrotados: set[str] = set(resultado["enemigos_derrotados"])
+        self.assertEqual(
+            resultado["experiencia_obtenida"],
+            sum(
+                enemigo["experiencia"]
+                for enemigo in enemigos
+                if enemigo["id_instancia"] in derrotados
+            ),
+        )
+        self.assertEqual(
+            resultado["dinero_obtenido"],
+            sum(
+                enemigo["dinero"]
+                for enemigo in enemigos
+                if enemigo["id_instancia"] in derrotados
+            ),
+        )
 
 
 if __name__ == "__main__":
