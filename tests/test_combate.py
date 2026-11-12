@@ -12,11 +12,16 @@ from modelos.combate import (
     AventureroCombate,
     DefinicionOleada,
     EnemigoCombate,
+    ParticipanteTurno,
+    TurnoAventurero,
+    TurnoEnemigo,
 )
 from modelos.tipos import (
     AventureroActivo,
+    EfectividadAtaque,
     EstrategiaObjetivo,
     PlantillaAventurero,
+    TipoAtaque,
 )
 import servicios.combate as combate
 
@@ -147,6 +152,20 @@ def _estado_enemigo(
         "dinero": 1,
         "es_jefe": False,
     }
+
+
+def _turno_aventurero(
+    combatiente: AventureroCombate,
+) -> TurnoAventurero:
+    """Envuelve un aventurero conservando la referencia original."""
+
+    return {"bando": "aventureros", "combatiente": combatiente}
+
+
+def _turno_enemigo(combatiente: EnemigoCombate) -> TurnoEnemigo:
+    """Envuelve un enemigo conservando la referencia original."""
+
+    return {"bando": "enemigos", "combatiente": combatiente}
 
 
 class PruebasCreacionEstados(unittest.TestCase):
@@ -466,6 +485,355 @@ class PruebasAzarYObjetivos(unittest.TestCase):
             )
         with self.assertRaises(error):
             seleccionar_enemigo([muerto], RandomControlado())
+
+
+class PruebasAtaquesBasicos(unittest.TestCase):
+    """Comprueba efectividad, defensa y mutación temporal del objetivo."""
+
+    def test_aventurero_consulta_efectividad_segun_su_tipo_de_ataque(
+        self,
+    ) -> None:
+        obtener = _operacion("obtener_efectividad_ataque")
+        aventurero: AventureroCombate = _estado_aventurero()
+        enemigo: EnemigoCombate = _estado_enemigo()
+        esperados: dict[TipoAtaque, EfectividadAtaque] = {
+            "cuerpo_a_cuerpo": "efectivo",
+            "distancia": "efectivo",
+            "magico": "inefectivo",
+        }
+
+        for tipo_ataque, esperado in esperados.items():
+            with self.subTest(tipo_ataque=tipo_ataque):
+                aventurero["tipo_ataque"] = tipo_ataque
+                resultado = obtener(
+                    {"bando": "aventureros", "combatiente": aventurero},
+                    {"bando": "enemigos", "combatiente": enemigo},
+                )
+                self.assertEqual(resultado, esperado)
+
+    def test_ataque_enemigo_es_siempre_neutral(self) -> None:
+        obtener = _operacion("obtener_efectividad_ataque")
+
+        resultado = obtener(
+            {"bando": "enemigos", "combatiente": _estado_enemigo()},
+            {
+                "bando": "aventureros",
+                "combatiente": _estado_aventurero(),
+            },
+        )
+
+        self.assertEqual(resultado, "neutral")
+
+    def test_defensa_resta_dano_y_conserva_minimo_de_uno(self) -> None:
+        calcular = _operacion("calcular_dano_recibido")
+
+        self.assertEqual(calcular(30, 10), 20)
+        self.assertEqual(calcular(10, 10), 1)
+        self.assertEqual(calcular(5, 10), 1)
+
+    def test_defensa_rechaza_valores_negativos(self) -> None:
+        calcular = _operacion("calcular_dano_recibido")
+
+        for dano, defensa in ((-1, 0), (0, -1)):
+            with self.subTest(dano=dano, defensa=defensa):
+                with self.assertRaises(ValueError):
+                    calcular(dano, defensa)
+
+    def test_fallo_no_causa_dano_ni_modifica_objetivo(self) -> None:
+        ejecutar = _operacion("ejecutar_ataque_basico")
+        atacante: AventureroCombate = _estado_aventurero()
+        objetivo: EnemigoCombate = _estado_enemigo()
+
+        resultado = ejecutar(
+            atacante,
+            objetivo,
+            "neutral",
+            RandomControlado(tiradas=[91]),
+        )
+
+        self.assertEqual(
+            resultado,
+            {
+                "resultado": "fallo",
+                "dano_aplicado": 0,
+                "vida_restante": 20,
+                "objetivo_derrotado": False,
+            },
+        )
+        self.assertEqual(objetivo["vida_actual"], 20)
+        self.assertTrue(objetivo["esta_vivo"])
+
+    def test_impacto_aplica_efectividad_antes_de_defensa(self) -> None:
+        ejecutar = _operacion("ejecutar_ataque_basico")
+        casos: list[tuple[EfectividadAtaque, int, int]] = [
+            ("neutral", 11, 9),
+            ("efectivo", 17, 3),
+            ("inefectivo", 5, 15),
+        ]
+
+        for efectividad, dano_esperado, vida_esperada in casos:
+            with self.subTest(efectividad=efectividad):
+                objetivo: EnemigoCombate = _estado_enemigo()
+                resultado = cast(
+                    dict[str, object],
+                    ejecutar(
+                        _estado_aventurero(),
+                        objetivo,
+                        efectividad,
+                        RandomControlado(tiradas=[6]),
+                    ),
+                )
+                self.assertEqual(resultado["resultado"], "impacto")
+                self.assertEqual(resultado["dano_aplicado"], dano_esperado)
+                self.assertEqual(resultado["vida_restante"], vida_esperada)
+
+    def test_critico_duplica_antes_de_defensa_y_actualiza_la_muerte(
+        self,
+    ) -> None:
+        ejecutar = _operacion("ejecutar_ataque_basico")
+        objetivo: EnemigoCombate = _estado_enemigo()
+
+        resultado = ejecutar(
+            _estado_aventurero(),
+            objetivo,
+            "neutral",
+            RandomControlado(tiradas=[5]),
+        )
+
+        self.assertEqual(resultado["resultado"], "critico")
+        self.assertEqual(resultado["dano_aplicado"], 23)
+        self.assertEqual(resultado["vida_restante"], 0)
+        self.assertTrue(resultado["objetivo_derrotado"])
+        self.assertEqual(objetivo["vida_actual"], 0)
+        self.assertFalse(objetivo["esta_vivo"])
+
+    def test_rechaza_objetivo_muerto_sin_consumir_tirada(self) -> None:
+        ejecutar = _operacion("ejecutar_ataque_basico")
+        objetivo: EnemigoCombate = _estado_enemigo(
+            vida_actual=0,
+            esta_vivo=False,
+        )
+        generador = RandomControlado(tiradas=[5])
+        error = getattr(combate, "EstadoCombateInvalidoError", ValueError)
+
+        with self.assertRaises(error):
+            ejecutar(
+                _estado_aventurero(),
+                objetivo,
+                "neutral",
+                generador,
+            )
+
+        self.assertEqual(generador.tiradas, [5])
+        self.assertEqual(objetivo["vida_actual"], 0)
+
+
+class PruebasTurnosYRonda(unittest.TestCase):
+    """Comprueba el orden inicial y una vuelta completa de participantes."""
+
+    def test_orden_descendente_desempata_y_excluye_muertos(self) -> None:
+        calcular = _operacion("calcular_orden_turnos")
+        aventurero_1: AventureroCombate = _estado_aventurero(
+            identificador="AV-0001"
+        )
+        aventurero_1["velocidad"] = 10
+        aventurero_2: AventureroCombate = _estado_aventurero(
+            identificador="AV-0002"
+        )
+        aventurero_2["velocidad"] = 10
+        muerto: AventureroCombate = _estado_aventurero(
+            identificador="AV-0003",
+            vida_actual=0,
+            esta_vivo=False,
+        )
+        muerto["velocidad"] = 99
+        enemigo_rapido: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-01"
+        )
+        enemigo_rapido["velocidad"] = 20
+        enemigo_empatado: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-02"
+        )
+        enemigo_empatado["velocidad"] = 10
+
+        orden = cast(
+            list[ParticipanteTurno],
+            calcular(
+                [aventurero_1, aventurero_2, muerto],
+                [enemigo_rapido, enemigo_empatado],
+                RandomControlado(tiradas=[20, 90, 50]),
+            ),
+        )
+
+        self.assertEqual(
+            [turno["combatiente"]["nombre"] for turno in orden],
+            ["Limo", "Aldric", "Limo", "Aldric"],
+        )
+        self.assertIs(orden[0]["combatiente"], enemigo_rapido)
+        self.assertIs(orden[1]["combatiente"], aventurero_2)
+        self.assertIs(orden[2]["combatiente"], enemigo_empatado)
+        self.assertIs(orden[3]["combatiente"], aventurero_1)
+        self.assertNotIn(muerto, [turno["combatiente"] for turno in orden])
+
+    def test_cada_participante_vivo_actua_una_vez(self) -> None:
+        resolver = _operacion("resolver_ronda")
+        aventurero_1: AventureroCombate = _estado_aventurero(
+            identificador="AV-0001"
+        )
+        aventurero_2: AventureroCombate = _estado_aventurero(
+            identificador="AV-0002"
+        )
+        enemigo: EnemigoCombate = _estado_enemigo()
+        aventurero_1["dano"] = 2
+        aventurero_1["defensa"] = 0
+        aventurero_2["dano"] = 2
+        enemigo["vida_maxima"] = 100
+        enemigo["vida_actual"] = 100
+        enemigo["dano"] = 2
+        enemigo["defensa"] = 0
+        orden: list[ParticipanteTurno] = [
+            _turno_aventurero(aventurero_1),
+            _turno_aventurero(aventurero_2),
+            _turno_enemigo(enemigo),
+        ]
+
+        derrotados = resolver(
+            orden,
+            [aventurero_1, aventurero_2],
+            [enemigo],
+            RandomControlado(
+                tiradas=[6, 6, 6],
+                elecciones=[0, 0, 0],
+            ),
+        )
+
+        self.assertEqual(derrotados, [])
+        self.assertEqual(enemigo["vida_actual"], 94)
+        self.assertEqual(aventurero_1["vida_actual"], 18)
+        self.assertEqual(aventurero_2["vida_actual"], 20)
+
+    def test_derrotado_antes_de_su_posicion_pierde_el_turno(self) -> None:
+        resolver = _operacion("resolver_ronda")
+        aventurero: AventureroCombate = _estado_aventurero(
+            estrategia="menor_vida_actual"
+        )
+        enemigo_1: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-01",
+            vida_actual=5,
+        )
+        enemigo_2: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-02"
+        )
+        orden: list[ParticipanteTurno] = [
+            _turno_aventurero(aventurero),
+            _turno_enemigo(enemigo_1),
+            _turno_enemigo(enemigo_2),
+        ]
+
+        derrotados = resolver(
+            orden,
+            [aventurero],
+            [enemigo_1, enemigo_2],
+            RandomControlado(tiradas=[6, 6], elecciones=[0]),
+        )
+
+        self.assertEqual(derrotados, ["LIMOS_LIMO-01"])
+        self.assertEqual(aventurero["vida_actual"], 16)
+        self.assertFalse(enemigo_1["esta_vivo"])
+
+    def test_ronda_se_detiene_cuando_un_bando_queda_sin_vivos(self) -> None:
+        resolver = _operacion("resolver_ronda")
+        aventurero_1: AventureroCombate = _estado_aventurero(
+            identificador="AV-0001"
+        )
+        aventurero_2: AventureroCombate = _estado_aventurero(
+            identificador="AV-0002"
+        )
+        enemigo: EnemigoCombate = _estado_enemigo(vida_actual=5)
+        generador = RandomControlado(tiradas=[6], elecciones=[0])
+        orden: list[ParticipanteTurno] = [
+            _turno_aventurero(aventurero_1),
+            _turno_aventurero(aventurero_2),
+            _turno_enemigo(enemigo),
+        ]
+
+        derrotados = resolver(
+            orden,
+            [aventurero_1, aventurero_2],
+            [enemigo],
+            generador,
+        )
+
+        self.assertEqual(derrotados, ["LIMOS_LIMO-01"])
+        self.assertEqual(generador.tiradas, [])
+        self.assertEqual(generador.elecciones, [])
+
+    def test_devuelve_enemigos_en_orden_de_derrota(self) -> None:
+        resolver = _operacion("resolver_ronda")
+        aventurero_1: AventureroCombate = _estado_aventurero(
+            identificador="AV-0001",
+            estrategia="menor_vida_actual",
+        )
+        aventurero_2: AventureroCombate = _estado_aventurero(
+            identificador="AV-0002",
+            estrategia="menor_vida_actual",
+        )
+        enemigo_1: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-01",
+            vida_actual=4,
+        )
+        enemigo_2: EnemigoCombate = _estado_enemigo(
+            identificador="LIMOS_LIMO-02",
+            vida_actual=5,
+        )
+        orden: list[ParticipanteTurno] = [
+            _turno_aventurero(aventurero_1),
+            _turno_aventurero(aventurero_2),
+            _turno_enemigo(enemigo_1),
+            _turno_enemigo(enemigo_2),
+        ]
+
+        derrotados = resolver(
+            orden,
+            [aventurero_1, aventurero_2],
+            [enemigo_1, enemigo_2],
+            RandomControlado(tiradas=[6, 6]),
+        )
+
+        self.assertEqual(
+            derrotados,
+            ["LIMOS_LIMO-01", "LIMOS_LIMO-02"],
+        )
+
+    def test_muerto_previo_no_actua_ni_puede_ser_objetivo(self) -> None:
+        resolver = _operacion("resolver_ronda")
+        muerto: AventureroCombate = _estado_aventurero(
+            identificador="AV-0001",
+            vida_actual=0,
+            esta_vivo=False,
+        )
+        vivo: AventureroCombate = _estado_aventurero(
+            identificador="AV-0002"
+        )
+        vivo["dano"] = 0
+        enemigo: EnemigoCombate = _estado_enemigo()
+        orden: list[ParticipanteTurno] = [
+            _turno_aventurero(muerto),
+            _turno_aventurero(vivo),
+            _turno_enemigo(enemigo),
+        ]
+
+        derrotados = resolver(
+            orden,
+            [muerto, vivo],
+            [enemigo],
+            RandomControlado(tiradas=[6, 6], elecciones=[0, 0]),
+        )
+
+        self.assertEqual(derrotados, [])
+        self.assertEqual(muerto["vida_actual"], 0)
+        self.assertEqual(vivo["vida_actual"], 16)
+        self.assertEqual(enemigo["vida_actual"], 19)
 
 
 if __name__ == "__main__":
