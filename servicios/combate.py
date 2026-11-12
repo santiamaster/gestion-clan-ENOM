@@ -7,6 +7,7 @@ from typing import TypeVar
 from configuracion import (
     CANTIDAD_OLEADAS_MAZMORRA,
     LIMITE_IMPACTO_NORMAL,
+    LIMITE_RONDAS_OLEADA,
     PROBABILIDAD_CRITICA_MAXIMA,
 )
 from modelos.combate import (
@@ -17,7 +18,11 @@ from modelos.combate import (
     ParticipanteTurno,
     PlantillaEnemigo,
     ResultadoAtaque,
+    ResultadoCombate,
+    ResultadoOleada,
     ResultadoTirada,
+    TurnoAventurero,
+    TurnoEnemigo,
 )
 from modelos.tipos import (
     AventureroActivo,
@@ -230,7 +235,13 @@ def crear_enemigos_oleada(
                 "probabilidad_critica": calcular_probabilidad_critico(0),
                 "esta_vivo": True,
                 "tipo_ataque": plantilla["tipo_ataque"],
-                "efectividades": dict(plantilla["efectividades"]),
+                "efectividades": {
+                    "cuerpo_a_cuerpo": plantilla["efectividades"][
+                        "cuerpo_a_cuerpo"
+                    ],
+                    "distancia": plantilla["efectividades"]["distancia"],
+                    "magico": plantilla["efectividades"]["magico"],
+                },
                 "experiencia": plantilla["experiencia"],
                 "dinero": plantilla["dinero"],
                 "es_jefe": plantilla["es_jefe"],
@@ -400,6 +411,8 @@ def obtener_efectividad_ataque(
         raise ValueError("Un ataque básico debe dirigirse al bando contrario.")
     if atacante["bando"] == "enemigos":
         return "neutral"
+    if objetivo["bando"] != "enemigos":
+        raise ValueError("El objetivo del aventurero debe ser un enemigo.")
 
     aventurero: AventureroCombate = atacante["combatiente"]
     enemigo: EnemigoCombate = objetivo["combatiente"]
@@ -549,23 +562,22 @@ def resolver_ronda(
         if not any(enemigo["esta_vivo"] for enemigo in enemigos):
             break
 
-        combatiente = turno["combatiente"]
-        identidad: int = id(combatiente)
+        identidad: int = id(turno["combatiente"])
         if identidad in participantes_procesados:
             continue
         participantes_procesados.add(identidad)
 
-        if not combatiente["esta_vivo"]:
+        if not turno["combatiente"]["esta_vivo"]:
             continue
 
         if turno["bando"] == "aventureros":
-            atacante: AventureroCombate = combatiente
+            atacante: AventureroCombate = turno["combatiente"]
             objetivo: EnemigoCombate = seleccionar_objetivo_aventurero(
                 atacante,
                 enemigos,
                 generador,
             )
-            turno_objetivo = {
+            turno_objetivo: TurnoEnemigo = {
                 "bando": "enemigos",
                 "combatiente": objetivo,
             }
@@ -582,11 +594,11 @@ def resolver_ronda(
             if resultado["objetivo_derrotado"]:
                 derrotados.append(objetivo["id_instancia"])
         else:
-            atacante_enemigo: EnemigoCombate = combatiente
+            atacante_enemigo: EnemigoCombate = turno["combatiente"]
             objetivo_aventurero: AventureroCombate = (
                 seleccionar_objetivo_enemigo(aventureros, generador)
             )
-            turno_objetivo_aventurero = {
+            turno_objetivo_aventurero: TurnoAventurero = {
                 "bando": "aventureros",
                 "combatiente": objetivo_aventurero,
             }
@@ -604,4 +616,89 @@ def resolver_ronda(
             )
 
     return derrotados
+
+
+def resolver_oleada(
+    aventureros: list[AventureroCombate],
+    enemigos: list[EnemigoCombate],
+    generador: Random,
+) -> ResultadoOleada:
+    """Resuelve una oleada hasta victoria, derrota o límite de rondas.
+
+    El orden de turnos se calcula una sola vez y se conserva durante toda la
+    oleada. Las recompensas devueltas son provisionales: el futuro servicio de
+    expediciones decidirá si se entregan o se pierden.
+
+    Args:
+        aventureros: Estados temporales del grupo, incluidos muertos previos.
+        enemigos: Instancias independientes creadas para esta oleada.
+        generador: Fuente de azar compartida por toda la resolución.
+
+    Returns:
+        El resultado, las rondas disputadas, los estados finales y el botín
+        provisional de las instancias derrotadas.
+
+    Raises:
+        EstadoCombateInvalidoError: Si los grupos o estados son inválidos.
+        DefinicionOleadaInvalidaError: Si hay IDs enemigos duplicados.
+    """
+
+    _validar_estados_combate(aventureros, enemigos)
+    orden_turnos: list[ParticipanteTurno] = calcular_orden_turnos(
+        aventureros,
+        enemigos,
+        generador,
+    )
+    enemigos_derrotados: list[str] = []
+    ids_contabilizados: set[str] = set()
+    resultado_combate: ResultadoCombate = "limite_de_rondas"
+    rondas_disputadas: int = 0
+
+    for ronda in range(1, LIMITE_RONDAS_OLEADA + 1):
+        rondas_disputadas = ronda
+        derrotados_ronda: list[str] = resolver_ronda(
+            orden_turnos,
+            aventureros,
+            enemigos,
+            generador,
+        )
+        for identificador in derrotados_ronda:
+            if identificador not in ids_contabilizados:
+                ids_contabilizados.add(identificador)
+                enemigos_derrotados.append(identificador)
+
+        quedan_aventureros: bool = any(
+            aventurero["esta_vivo"] for aventurero in aventureros
+        )
+        quedan_enemigos: bool = any(
+            enemigo["esta_vivo"] for enemigo in enemigos
+        )
+        if not quedan_aventureros:
+            resultado_combate = "derrota"
+            break
+        if not quedan_enemigos:
+            resultado_combate = "victoria"
+            break
+
+    enemigos_por_id: dict[str, EnemigoCombate] = {
+        enemigo["id_instancia"]: enemigo for enemigo in enemigos
+    }
+    experiencia_obtenida: int = sum(
+        enemigos_por_id[identificador]["experiencia"]
+        for identificador in enemigos_derrotados
+    )
+    dinero_obtenido: int = sum(
+        enemigos_por_id[identificador]["dinero"]
+        for identificador in enemigos_derrotados
+    )
+
+    return {
+        "resultado": resultado_combate,
+        "rondas": rondas_disputadas,
+        "aventureros": aventureros,
+        "enemigos": enemigos,
+        "enemigos_derrotados": enemigos_derrotados,
+        "experiencia_obtenida": experiencia_obtenida,
+        "dinero_obtenido": dinero_obtenido,
+    }
 
