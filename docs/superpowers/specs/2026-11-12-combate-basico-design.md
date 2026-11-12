@@ -651,4 +651,3 @@ El servicio de expediciones reutilizará `resolver_oleada()` para:
 Las habilidades se incorporarán después sobre el mismo orden de turnos y los
 mismos estados temporales. El ataque básico será la alternativa cuando una
 habilidad no se utilice o se encuentre en enfriamiento.
-
