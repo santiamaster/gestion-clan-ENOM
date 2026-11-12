@@ -773,4 +773,3 @@ combat branch is implemented and verified, update its combat slide in a
 separate artifact task so it states 5% base critical chance, 90% maximum
 critical chance and 200% critical damage. This follow-up does not block the
 code or tests in this plan.
-
