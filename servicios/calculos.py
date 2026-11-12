@@ -11,6 +11,7 @@ from configuracion import (
     MULTIPLICADOR_CRITICO,
     NIVEL_MAXIMO_AVENTURERO,
     NIVEL_MAXIMO_CLAN,
+    PROBABILIDAD_CRITICA_MAXIMA,
 )
 from modelos.tipos import EfectividadAtaque, Estadisticas, PlantillaAventurero
 
@@ -222,11 +223,11 @@ def calcular_probabilidad_critico(critico_adicional: int) -> int:
         critico_adicional: Modificador propio de la profesión del aventurero.
 
     Returns:
-        La suma del 5% base y el modificador, limitada entre 0 y 100.
+        La suma del 5% base y el modificador, limitada entre 0 y 90.
     """
 
     probabilidad: int = CRITICO_BASE + critico_adicional
-    return max(0, min(100, probabilidad))
+    return max(0, min(PROBABILIDAD_CRITICA_MAXIMA, probabilidad))
 
 
 def calcular_dano_final(
