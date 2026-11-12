@@ -5,6 +5,7 @@ from typing import cast
 
 import catalogos.enemigos as enemigos
 from modelos.combate import PlantillaEnemigo
+from modelos.tipos import Estadisticas
 
 
 def _catalogo() -> dict[str, PlantillaEnemigo]:
@@ -79,7 +80,7 @@ class PruebasCatalogoEnemigos(unittest.TestCase):
 
         for identificador, plantilla in catalogo.items():
             with self.subTest(identificador=identificador):
-                estadisticas: dict[str, int] = plantilla["estadisticas"]
+                estadisticas: Estadisticas = plantilla["estadisticas"]
                 self.assertGreater(estadisticas["vida"], 0)
                 self.assertGreaterEqual(estadisticas["dano"], 0)
                 self.assertGreaterEqual(estadisticas["defensa"], 0)
