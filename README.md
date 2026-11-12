@@ -18,9 +18,13 @@ servicios principales. Ya están definidos:
 - La consulta, resurrección y sepultura de aventureros caídos.
 - La búsqueda, el listado y la expulsión segura de integrantes vivos.
 - La formación temporal del grupo según el nivel del clan.
+- Las diez plantillas enemigas de la Mazmorra de los Limos.
+- Las diez oleadas manuales de la primera mazmorra.
+- El combate básico automático, desde la tirada hasta el resultado de oleada.
 
-La interfaz, el motor de combate, los enemigos, las mazmorras y la conexión
-entre expediciones y renovaciones del mercado todavía están pendientes.
+La interfaz, las habilidades, el flujo completo de expediciones y la conexión
+entre sus resultados, la partida guardada y la renovación del mercado todavía
+están pendientes.
 
 ## Reclutamiento implementado
 
@@ -60,6 +64,22 @@ admite desde uno hasta `3, 4, 5, 6 o 7` integrantes según el nivel del clan. La
 selección conserva el orden elegido, rechaza muertos, ausentes y duplicados, y
 no modifica ni guarda la partida. El sistema de expediciones utilizará este
 resultado para crear posteriormente los estados temporales de combate.
+
+## Combate básico implementado
+
+La Mazmorra de los Limos cuenta con diez criaturas y diez oleadas fijas. Al
+iniciar una oleada se crean estados temporales independientes, se calcula una
+sola vez el orden por velocidad y los empates se resuelven mediante d100.
+
+Cada ataque usa una tirada para determinar crítico, impacto o fallo. El crítico
+base es 5%, su probabilidad total tiene un máximo de 90% y el daño crítico es
+del 200%. Después de aplicar crítico y efectividad se resta la defensa, con un
+mínimo de un punto para todo ataque que impacte.
+
+El motor resuelve rondas hasta victoria, derrota o un límite de 30 rondas y
+devuelve la experiencia y el dinero provisionales de cada enemigo derrotado.
+No modifica los registros persistentes ni decide todavía si el botín se
+entrega: esa responsabilidad corresponderá al futuro servicio de expediciones.
 
 ## Tecnologías
 
