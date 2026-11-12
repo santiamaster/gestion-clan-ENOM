@@ -15,16 +15,45 @@
 - Las estadísticas son vida, daño, defensa y velocidad.
 - Los turnos se ordenan por velocidad al comenzar cada oleada.
 - Los empates se resuelven con una tirada de d100.
-- El crítico base es 5% y causa 150% del daño.
+- Cada ataque usa una sola tirada d100: desde 1 hasta la probabilidad crítica
+  es crítico, desde el valor siguiente hasta 90 es impacto y de 91 a 100 es
+  fallo.
+- El crítico base es 5%, tiene un límite total de 90% y causa 200% del daño.
 - Los ataques efectivos causan 150%, los neutrales 100% y los inefectivos 50%.
 - Los multiplicadores de efectividad y crítico se combinan antes de redondear.
 - Los enemigos usan el crítico base del 5% sin modificadores adicionales.
+- Los ataques enemigos son siempre neutrales contra los aventureros en esta
+  versión simplificada.
+- Después de aplicar efectividad y crítico se resta la defensa. Todo ataque que
+  impacta causa al menos un punto de daño:
+
+  ```text
+  daño recibido = max(1, daño modificado - defensa)
+  ```
+
+- Un fallo causa cero puntos de daño y no aplica el mínimo de uno.
 - Los enemigos eligen al azar entre los aventureros vivos, salvo que una
   habilidad como `Provocar` o `Proteger` cambie el objetivo.
 - Por regla general, todo resultado decimal se redondea hacia abajo.
 - La vida no se recupera entre oleadas.
 - Los enfriamientos se conservan durante toda la expedición.
 - Cada oleada tiene un límite de 30 rondas.
+
+### Mazmorra de los Limos
+
+- La primera mazmorra dispone de diez enemigos y diez oleadas cargadas
+  manualmente en los catálogos.
+- Las composiciones manuales son la fuente de verdad; el motor no genera
+  cantidades aleatorias.
+- La oleada 6 contiene dos Brujilimos, dos Medulimos y dos Tríos Limosos.
+- La oleada 10 contiene un único Rey Limo como jefe.
+- La mazmorra completa suma inicialmente 54 enemigos, 890 puntos de
+  experiencia base y 258 monedas base.
+- El orden se calcula una sola vez al comenzar cada oleada y se conserva en
+  todas sus rondas.
+- Una oleada termina en victoria, derrota o `limite_de_rondas`.
+- Los enemigos derrotados aportan experiencia y dinero provisionales una sola
+  vez. La futura expedición decidirá si el clan conserva ese botín.
 
 ## Expediciones
 
@@ -138,7 +167,7 @@
   orden histórico. Excluye las bajas con `servicios_finalizados`, porque esos
   aventureros abandonaron el clan con vida.
 
-## Cálculos base implementados
+## Cálculos y combate implementados
 
 Las funciones puras de `servicios/calculos.py` resuelven actualmente:
 
@@ -150,9 +179,17 @@ Las funciones puras de `servicios/calculos.py` resuelven actualmente:
 - Probabilidad crítica total.
 - Daño modificado por efectividad y crítico.
 
-Estas funciones no modifican listas, archivos JSON ni elementos de la
-interfaz. La defensa, las tiradas y las habilidades se incorporarán en los
-bloques correspondientes al sistema de combate.
+Las funciones de `servicios/combate.py` trabajan exclusivamente con estados
+temporales y resuelven:
+
+- Defensa y daño mínimo de los ataques que impactan.
+- Tiradas d100, selección de objetivos y desempates.
+- Orden de turnos, ataques básicos, rondas y oleadas completas.
+
+Ninguno de estos servicios modifica archivos JSON ni elementos de la interfaz.
+Las funciones de cálculo son puras; las de combate modifican solamente la vida
+y el estado de los combatientes temporales recibidos. Las habilidades y sus
+efectos se incorporarán en un bloque posterior.
 
 ## Persistencia implementada
 
