@@ -14,11 +14,18 @@ from modelos.combate import (
     CombatienteBase,
     DefinicionOleada,
     EnemigoCombate,
+    ParticipanteTurno,
     PlantillaEnemigo,
+    ResultadoAtaque,
     ResultadoTirada,
 )
-from modelos.tipos import AventureroActivo, PlantillaAventurero
+from modelos.tipos import (
+    AventureroActivo,
+    EfectividadAtaque,
+    PlantillaAventurero,
+)
 from servicios.calculos import (
+    calcular_dano_final,
     calcular_estadisticas,
     calcular_probabilidad_critico,
 )
@@ -373,4 +380,228 @@ def seleccionar_objetivo_enemigo(
             "No quedan aventureros vivos para seleccionar."
         )
     return generador.choice(vivos)
+
+
+def obtener_efectividad_ataque(
+    atacante: ParticipanteTurno,
+    objetivo: ParticipanteTurno,
+) -> EfectividadAtaque:
+    """Determina la efectividad aplicable entre dos bandos distintos.
+
+    Los ataques enemigos son neutrales en esta versión simplificada. Los
+    aventureros consultan en el enemigo la efectividad correspondiente a su
+    tipo de ataque.
+
+    Raises:
+        ValueError: Si atacante y objetivo pertenecen al mismo bando.
+    """
+
+    if atacante["bando"] == objetivo["bando"]:
+        raise ValueError("Un ataque básico debe dirigirse al bando contrario.")
+    if atacante["bando"] == "enemigos":
+        return "neutral"
+
+    aventurero: AventureroCombate = atacante["combatiente"]
+    enemigo: EnemigoCombate = objetivo["combatiente"]
+    return enemigo["efectividades"][aventurero["tipo_ataque"]]
+
+
+def calcular_dano_recibido(dano_modificado: int, defensa: int) -> int:
+    """Resta la defensa y conserva un mínimo de un punto por impacto.
+
+    Args:
+        dano_modificado: Daño posterior a efectividad y posible crítico.
+        defensa: Defensa actual del objetivo.
+
+    Returns:
+        El daño que debe descontarse de la vida.
+
+    Raises:
+        ValueError: Si alguno de los valores recibidos es negativo.
+    """
+
+    if dano_modificado < 0 or defensa < 0:
+        raise ValueError("El daño y la defensa no pueden ser negativos.")
+    return max(1, dano_modificado - defensa)
+
+
+def ejecutar_ataque_basico(
+    atacante: CombatienteBase,
+    objetivo: CombatienteBase,
+    efectividad: EfectividadAtaque,
+    generador: Random,
+) -> ResultadoAtaque:
+    """Resuelve un ataque y muta solamente la vida temporal del objetivo.
+
+    El ataque usa una sola tirada. Si impacta, aplica primero efectividad y
+    crítico, luego defensa y finalmente limita la vida resultante a cero.
+
+    Raises:
+        EstadoCombateInvalidoError: Si atacante u objetivo son incoherentes,
+            o si alguno ya está muerto antes del ataque.
+    """
+
+    _validar_combatiente(atacante)
+    _validar_combatiente(objetivo)
+    if not atacante["esta_vivo"]:
+        raise EstadoCombateInvalidoError(
+            "Un combatiente muerto no puede realizar un ataque."
+        )
+    if not objetivo["esta_vivo"]:
+        raise EstadoCombateInvalidoError(
+            "No se puede atacar a un objetivo que ya está muerto."
+        )
+
+    resultado_tirada: ResultadoTirada = resolver_tirada_ataque(
+        atacante["probabilidad_critica"],
+        generador,
+    )
+    if resultado_tirada == "fallo":
+        return {
+            "resultado": "fallo",
+            "dano_aplicado": 0,
+            "vida_restante": objetivo["vida_actual"],
+            "objetivo_derrotado": False,
+        }
+
+    dano_modificado: int = calcular_dano_final(
+        atacante["dano"],
+        efectividad,
+        resultado_tirada == "critico",
+    )
+    dano_aplicado: int = calcular_dano_recibido(
+        dano_modificado,
+        objetivo["defensa"],
+    )
+    objetivo["vida_actual"] = max(
+        0,
+        objetivo["vida_actual"] - dano_aplicado,
+    )
+    objetivo_derrotado: bool = objetivo["vida_actual"] == 0
+    objetivo["esta_vivo"] = not objetivo_derrotado
+
+    return {
+        "resultado": resultado_tirada,
+        "dano_aplicado": dano_aplicado,
+        "vida_restante": objetivo["vida_actual"],
+        "objetivo_derrotado": objetivo_derrotado,
+    }
+
+
+def calcular_orden_turnos(
+    aventureros: Sequence[AventureroCombate],
+    enemigos: Sequence[EnemigoCombate],
+    generador: Random,
+) -> list[ParticipanteTurno]:
+    """Crea el orden de la oleada por velocidad descendente.
+
+    Los combatientes muertos quedan excluidos. Cada empate de velocidad se
+    resuelve con d100 y las estructuras del orden conservan referencias a los
+    estados temporales originales.
+    """
+
+    participantes: list[ParticipanteTurno] = []
+    for aventurero in aventureros:
+        _validar_combatiente(aventurero)
+        if aventurero["esta_vivo"]:
+            participantes.append(
+                {"bando": "aventureros", "combatiente": aventurero}
+            )
+    for enemigo in enemigos:
+        _validar_combatiente(enemigo)
+        if enemigo["esta_vivo"]:
+            participantes.append(
+                {"bando": "enemigos", "combatiente": enemigo}
+            )
+
+    grupos_por_velocidad: dict[int, list[ParticipanteTurno]] = {}
+    for participante in participantes:
+        velocidad: int = participante["combatiente"]["velocidad"]
+        grupos_por_velocidad.setdefault(velocidad, []).append(participante)
+
+    orden: list[ParticipanteTurno] = []
+    for velocidad in sorted(grupos_por_velocidad, reverse=True):
+        empatados: list[ParticipanteTurno] = grupos_por_velocidad[velocidad]
+        orden.extend(resolver_desempate_d100(empatados, generador))
+    return orden
+
+
+def resolver_ronda(
+    orden_turnos: Sequence[ParticipanteTurno],
+    aventureros: list[AventureroCombate],
+    enemigos: list[EnemigoCombate],
+    generador: Random,
+) -> list[str]:
+    """Ejecuta como máximo un turno por participante vivo.
+
+    El recorrido se detiene en cuanto uno de los bandos deja de tener
+    supervivientes. Los enemigos derrotados se devuelven en el orden exacto
+    en que cayeron para que la oleada acumule sus recompensas una sola vez.
+    """
+
+    _validar_estados_combate(aventureros, enemigos)
+    derrotados: list[str] = []
+    participantes_procesados: set[int] = set()
+
+    for turno in orden_turnos:
+        if not any(aventurero["esta_vivo"] for aventurero in aventureros):
+            break
+        if not any(enemigo["esta_vivo"] for enemigo in enemigos):
+            break
+
+        combatiente = turno["combatiente"]
+        identidad: int = id(combatiente)
+        if identidad in participantes_procesados:
+            continue
+        participantes_procesados.add(identidad)
+
+        if not combatiente["esta_vivo"]:
+            continue
+
+        if turno["bando"] == "aventureros":
+            atacante: AventureroCombate = combatiente
+            objetivo: EnemigoCombate = seleccionar_objetivo_aventurero(
+                atacante,
+                enemigos,
+                generador,
+            )
+            turno_objetivo = {
+                "bando": "enemigos",
+                "combatiente": objetivo,
+            }
+            efectividad: EfectividadAtaque = obtener_efectividad_ataque(
+                turno,
+                turno_objetivo,
+            )
+            resultado: ResultadoAtaque = ejecutar_ataque_basico(
+                atacante,
+                objetivo,
+                efectividad,
+                generador,
+            )
+            if resultado["objetivo_derrotado"]:
+                derrotados.append(objetivo["id_instancia"])
+        else:
+            atacante_enemigo: EnemigoCombate = combatiente
+            objetivo_aventurero: AventureroCombate = (
+                seleccionar_objetivo_enemigo(aventureros, generador)
+            )
+            turno_objetivo_aventurero = {
+                "bando": "aventureros",
+                "combatiente": objetivo_aventurero,
+            }
+            efectividad_enemiga: EfectividadAtaque = (
+                obtener_efectividad_ataque(
+                    turno,
+                    turno_objetivo_aventurero,
+                )
+            )
+            ejecutar_ataque_basico(
+                atacante_enemigo,
+                objetivo_aventurero,
+                efectividad_enemiga,
+                generador,
+            )
+
+    return derrotados
 
