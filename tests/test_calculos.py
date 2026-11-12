@@ -143,20 +143,21 @@ class PruebasCombateBase(unittest.TestCase):
         self.assertEqual(calcular_probabilidad_critico(0), 5)
         self.assertEqual(calcular_probabilidad_critico(15), 20)
 
-    def test_limita_probabilidad_critica_entre_cero_y_cien(self) -> None:
+    def test_limita_probabilidad_critica_entre_cero_y_noventa(self) -> None:
         self.assertEqual(calcular_probabilidad_critico(-10), 0)
-        self.assertEqual(calcular_probabilidad_critico(200), 100)
+        self.assertEqual(calcular_probabilidad_critico(85), 90)
+        self.assertEqual(calcular_probabilidad_critico(200), 90)
 
     def test_calcula_dano_segun_efectividad(self) -> None:
         self.assertEqual(calcular_dano_final(15, "neutral", False), 15)
         self.assertEqual(calcular_dano_final(15, "efectivo", False), 22)
         self.assertEqual(calcular_dano_final(15, "inefectivo", False), 7)
 
-    def test_aplica_multiplicador_critico(self) -> None:
-        self.assertEqual(calcular_dano_final(15, "neutral", True), 22)
+    def test_aplica_critico_del_doscientos_por_ciento(self) -> None:
+        self.assertEqual(calcular_dano_final(15, "neutral", True), 30)
 
     def test_combina_efectividad_y_critico_antes_de_redondear(self) -> None:
-        self.assertEqual(calcular_dano_final(15, "efectivo", True), 33)
+        self.assertEqual(calcular_dano_final(15, "efectivo", True), 45)
 
     def test_acepta_dano_cero_y_rechaza_dano_negativo(self) -> None:
         self.assertEqual(calcular_dano_final(0, "efectivo", True), 0)
