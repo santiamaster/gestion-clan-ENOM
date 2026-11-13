@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from shutil import copyfile
 from typing import Callable, TypeVar, cast
 
 from modelos.tipos import AventureroActivo, AventureroEliminado, EstadoClan
@@ -166,6 +167,16 @@ def _serializar_json(datos: object) -> str:
     return json.dumps(datos, ensure_ascii=False, indent=4) + "\n"
 
 
+def _limpiar_archivos_auxiliares(rutas: list[Path]) -> None:
+    """Intenta eliminar temporales o respaldos sin ocultar el error original."""
+
+    for ruta in rutas:
+        try:
+            ruta.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def guardar_partida(
     estado_clan: EstadoClan,
     datos_activos: list[AventureroActivo],
@@ -207,27 +218,49 @@ def guardar_partida(
         NOMBRE_DATOS_ACTIVOS: _serializar_json(activos_validados),
         NOMBRE_DATOS_ELIMINADOS: _serializar_json(eliminados_validados),
     }
-    temporales: list[Path] = []
+    temporales: dict[str, Path] = {
+        nombre: ruta.with_name(f"{ruta.name}.tmp")
+        for nombre, ruta in rutas.items()
+    }
+    respaldos: dict[str, Path] = {
+        nombre: ruta.with_name(f"{ruta.name}.bak")
+        for nombre, ruta in rutas.items()
+    }
+    existian: dict[str, bool] = {
+        nombre: ruta.exists() for nombre, ruta in rutas.items()
+    }
+    auxiliares: list[Path] = [*temporales.values(), *respaldos.values()]
 
     try:
         crear_directorio_partida(directorio)
-        for nombre, ruta in rutas.items():
-            temporal: Path = ruta.with_name(f"{ruta.name}.tmp")
-            temporal.write_text(contenidos[nombre], encoding="utf-8")
-            temporales.append(temporal)
+        _limpiar_archivos_auxiliares(auxiliares)
 
         for nombre, ruta in rutas.items():
-            temporal = ruta.with_name(f"{ruta.name}.tmp")
-            temporal.replace(ruta)
+            temporal: Path = temporales[nombre]
+            temporal.write_text(contenidos[nombre], encoding="utf-8")
+
+        for nombre, ruta in rutas.items():
+            if existian[nombre]:
+                copyfile(ruta, respaldos[nombre])
+
+        for nombre, ruta in rutas.items():
+            temporales[nombre].replace(ruta)
     except OSError as error:
-        for temporal in temporales:
+        for nombre, ruta in rutas.items():
             try:
-                temporal.unlink(missing_ok=True)
+                respaldo: Path = respaldos[nombre]
+                if existian[nombre] and respaldo.exists():
+                    respaldo.replace(ruta)
+                elif not existian[nombre]:
+                    ruta.unlink(missing_ok=True)
             except OSError:
                 pass
+        _limpiar_archivos_auxiliares(auxiliares)
         raise ErrorPersistencia(
             "No fue posible guardar los archivos de la partida."
         ) from error
+    else:
+        _limpiar_archivos_auxiliares(auxiliares)
 
 
 def eliminar_partida(

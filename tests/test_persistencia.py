@@ -28,6 +28,9 @@ from servicios.validaciones import (
 from tests.test_validaciones import crear_aventurero_activo, crear_estado_clan
 
 
+REEMPLAZAR_REAL = Path.replace
+
+
 def escribir_json(directorio: Path, nombre: str, datos: object) -> None:
     """Escribe un JSON de prueba dentro de un directorio temporal."""
 
@@ -155,6 +158,7 @@ class PruebasGuardadoPersistencia(unittest.TestCase):
             self.assertIn('    "nombre"', contenido)
             self.assertEqual(cargar_partida(directorio), (estado, activos, []))
             self.assertEqual(list(directorio.glob("*.tmp")), [])
+            self.assertEqual(list(directorio.glob("*.bak")), [])
 
     def test_sustituye_una_partida_anterior(self) -> None:
         with TemporaryDirectory() as temporal:
@@ -177,6 +181,105 @@ class PruebasGuardadoPersistencia(unittest.TestCase):
                 guardar_partida(estado_invalido, [], [], directorio)
 
             self.assertFalse(directorio.exists())
+
+    def test_restaura_los_tres_json_si_falla_cualquier_reemplazo(
+        self,
+    ) -> None:
+        for reemplazo_fallido in (1, 2, 3):
+            with self.subTest(reemplazo_fallido=reemplazo_fallido):
+                with TemporaryDirectory() as temporal:
+                    directorio = Path(temporal) / "partida"
+                    estado_anterior = validar_estado_clan(crear_estado_clan())
+                    activos_anteriores = validar_datos_activos(
+                        [crear_aventurero_activo()]
+                    )
+                    eliminados_anteriores = validar_datos_eliminados([])
+                    guardar_partida(
+                        estado_anterior,
+                        activos_anteriores,
+                        eliminados_anteriores,
+                        directorio,
+                    )
+                    bytes_anteriores: dict[str, bytes] = {
+                        ruta.name: ruta.read_bytes()
+                        for ruta in directorio.glob("*.json")
+                    }
+                    estado_nuevo: EstadoClan = validar_estado_clan(
+                        crear_estado_clan()
+                    )
+                    estado_nuevo["dinero"] = 250
+                    contador: int = 0
+
+                    def reemplazar_con_fallo(
+                        origen: Path,
+                        destino: Path,
+                    ) -> Path:
+                        nonlocal contador
+                        if origen.name.endswith(".tmp"):
+                            contador += 1
+                            if contador == reemplazo_fallido:
+                                raise OSError("reemplazo bloqueado")
+                        return REEMPLAZAR_REAL(origen, destino)
+
+                    with patch.object(
+                        Path,
+                        "replace",
+                        new=reemplazar_con_fallo,
+                    ):
+                        with self.assertRaises(ErrorPersistencia):
+                            guardar_partida(
+                                estado_nuevo,
+                                activos_anteriores,
+                                eliminados_anteriores,
+                                directorio,
+                            )
+
+                    bytes_actuales: dict[str, bytes] = {
+                        ruta.name: ruta.read_bytes()
+                        for ruta in directorio.glob("*.json")
+                    }
+                    self.assertEqual(bytes_actuales, bytes_anteriores)
+                    self.assertEqual(
+                        cargar_partida(directorio),
+                        (
+                            estado_anterior,
+                            activos_anteriores,
+                            eliminados_anteriores,
+                        ),
+                    )
+                    self.assertEqual(list(directorio.glob("*.tmp")), [])
+                    self.assertEqual(list(directorio.glob("*.bak")), [])
+
+    def test_no_deja_partida_parcial_en_un_directorio_nuevo(self) -> None:
+        for reemplazo_fallido in (1, 2, 3):
+            with self.subTest(reemplazo_fallido=reemplazo_fallido):
+                with TemporaryDirectory() as temporal:
+                    directorio = Path(temporal) / "partida"
+                    estado = validar_estado_clan(crear_estado_clan())
+                    contador: int = 0
+
+                    def reemplazar_con_fallo(
+                        origen: Path,
+                        destino: Path,
+                    ) -> Path:
+                        nonlocal contador
+                        if origen.name.endswith(".tmp"):
+                            contador += 1
+                            if contador == reemplazo_fallido:
+                                raise OSError("reemplazo bloqueado")
+                        return REEMPLAZAR_REAL(origen, destino)
+
+                    with patch.object(
+                        Path,
+                        "replace",
+                        new=reemplazar_con_fallo,
+                    ):
+                        with self.assertRaises(ErrorPersistencia):
+                            guardar_partida(estado, [], [], directorio)
+
+                    self.assertEqual(list(directorio.glob("*.json")), [])
+                    self.assertEqual(list(directorio.glob("*.tmp")), [])
+                    self.assertEqual(list(directorio.glob("*.bak")), [])
 
     def test_eliminar_partida_inexistente_no_falla(self) -> None:
         with TemporaryDirectory() as temporal:
