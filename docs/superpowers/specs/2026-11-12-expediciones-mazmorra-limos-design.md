@@ -389,4 +389,3 @@ El bloque estará completo cuando una capa de interfaz pueda:
 3. continuar o retirarse cuando corresponda;
 4. cerrar la expedición y recargar desde JSON el mismo resultado persistente;
 5. distinguir retirada, mazmorra completada, derrota total y límite de rondas.
-
