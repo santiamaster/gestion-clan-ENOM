@@ -21,10 +21,14 @@ servicios principales. Ya están definidos:
 - Las diez plantillas enemigas de la Mazmorra de los Limos.
 - Las diez oleadas manuales de la primera mazmorra.
 - El combate básico automático, desde la tirada hasta el resultado de oleada.
+- El flujo completo de expediciones de la Mazmorra de los Limos.
+- La entrega o pérdida de botín, progresión de supervivientes y recuperación de
+  muertos.
+- La renovación del mercado, evaluación de derrota y cierre transaccional en
+  JSON.
 
-La interfaz, las habilidades, el flujo completo de expediciones y la conexión
-entre sus resultados, la partida guardada y la renovación del mercado todavía
-están pendientes.
+La interfaz de Tkinter, las habilidades profesionales y las mazmorras de
+dificultad 2 a 5 todavía están pendientes.
 
 ## Reclutamiento implementado
 
@@ -78,8 +82,26 @@ mínimo de un punto para todo ataque que impacte.
 
 El motor resuelve rondas hasta victoria, derrota o un límite de 30 rondas y
 devuelve la experiencia y el dinero provisionales de cada enemigo derrotado.
-No modifica los registros persistentes ni decide todavía si el botín se
-entrega: esa responsabilidad corresponderá al futuro servicio de expediciones.
+No modifica los registros persistentes; el servicio de expediciones entrega o
+pierde esos pozos al cerrar la incursión.
+
+## Expediciones implementadas
+
+El jugador puede recorrer las diez oleadas de la Mazmorra de los Limos y,
+después de cada victoria intermedia, continuar o retirarse. La vida se conserva
+entre oleadas y la experiencia no recibe multiplicadores. El dinero recibe una
+bonificación acumulativa del 10% por oleada y completar la mazmorra agrega 100
+monedas.
+
+Al finalizar, la experiencia se divide mediante división entera entre quienes
+regresen vivos. Los muertos recuperados permanecen en el clan para ser tratados
+en la iglesia. Si todo el grupo cae, se pierde el botín y sus integrantes pasan
+al historial como caídos no recuperados.
+
+El cierre renueva el mercado, evalúa si todavía existe una alternativa jugable
+y guarda los tres JSON antes de publicar los cambios en memoria. Si el guardado
+falla, el cierre puede reintentarse sin duplicar recompensas ni alterar el
+resultado aleatorio del mercado.
 
 ## Tecnologías
 

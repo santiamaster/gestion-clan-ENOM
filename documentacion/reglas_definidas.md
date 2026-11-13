@@ -53,7 +53,8 @@
   todas sus rondas.
 - Una oleada termina en victoria, derrota o `limite_de_rondas`.
 - Los enemigos derrotados aportan experiencia y dinero provisionales una sola
-  vez. La futura expedición decidirá si el clan conserva ese botín.
+  vez. El servicio de expediciones decide al finalizar si el clan conserva ese
+  botín.
 
 ## Expediciones
 
@@ -65,6 +66,33 @@
   regresen vivos. La división entera redondea hacia abajo y descarta el
   sobrante.
 - Una derrota total pierde el botín y los cuerpos no pueden recuperarse.
+- La expedición se mantiene exclusivamente en memoria y no puede guardarse ni
+  reanudarse a mitad de la mazmorra.
+- Una victoria en las oleadas 1 a 9 permite continuar o retirarse. Una derrota,
+  el límite de rondas o la victoria en la oleada 10 finalizan automáticamente.
+- El dinero de cada oleada recibe un 10% acumulativo desde la segunda:
+
+  ```text
+  dinero = dinero base × (100 + 10 × (oleada - 1)) // 100
+  ```
+
+- Las diez oleadas entregan 416 monedas por enemigos. Completar la décima
+  agrega 100 monedas, para un total de 516. Este premio se obtiene cada vez que
+  se completa la mazmorra.
+- La experiencia no recibe multiplicadores. Las diez oleadas aportan 890
+  puntos antes de dividir el pozo entre los supervivientes.
+- Una expedición terminada por límite de rondas regresa con el botín parcial de
+  los enemigos derrotados hasta ese momento.
+- Los muertos de un grupo que conserva supervivientes quedan recuperados en la
+  iglesia. Si nadie regresa, todo el grupo pasa al historial como
+  `caido_no_recuperado` y pierde dinero y experiencia.
+- Al cerrar una expedición se renueva completamente el mercado y se restablece
+  la cantidad de contrataciones correspondiente al nivel del clan.
+- La partida solo termina en derrota si no quedan vivos y el dinero no alcanza
+  para resucitar un cuerpo ni para contratar ninguna oferta disponible.
+- El cierre trabaja sobre copias, guarda los tres JSON y recién después publica
+  los cambios. Un error permite reintentar sin duplicar recompensas ni cambiar
+  el mercado aleatorio.
 
 ## Clan
 
@@ -107,8 +135,8 @@
 - La selección conserva el orden elegido por el jugador.
 - El grupo se representa temporalmente mediante una lista de IDs: no forma
   parte del estado persistente ni modifica las listas recibidas.
-- Los estados temporales de combate se crearán al iniciar la expedición y no
-  forman parte de este bloque.
+- Los estados temporales de combate se crean al iniciar la expedición y no se
+  incorporan a los JSON persistentes.
 
 ## Reclutamiento
 
@@ -135,10 +163,8 @@
 - Los vivos y los muertos que continúan en el clan ocupan cupo por igual.
 - Liberar cupo permite volver a intentar la contratación con la misma oferta.
 - Una partida nueva guarda dos ofertas iniciales y una contratación disponible.
-- Al terminar una expedición se deberá reemplazar completamente el mercado y
-  restablecer el contador según el nivel actual del clan. El servicio de
-  renovación ya está implementado; su llamada quedará integrada cuando se
-  desarrolle el flujo de expediciones.
+- Al terminar una expedición se reemplaza completamente el mercado y se
+  restablece el contador según el nivel actual del clan.
 
 ## Iglesia
 
@@ -201,6 +227,11 @@ efectos se incorporarán en un bloque posterior.
 - Los archivos problemáticos se conservan intactos para evitar pérdida de datos.
 - Los datos se validan antes de cargarse y antes de guardarse.
 - El guardado utiliza archivos temporales y codificación UTF-8.
+- Antes de reemplazar una partida existente se crean respaldos de sus tres
+  JSON. Si un reemplazo informa un error, se restauran los archivos anteriores
+  y se eliminan temporales, respaldos y destinos parciales.
+- Esta restauración cubre errores controlados informados al proceso; no promete
+  atomicidad frente a un corte de energía o una caída abrupta del sistema.
 - Los nombres con tildes y otros caracteres se conservan directamente.
 - La eliminación afecta solamente a los tres archivos conocidos.
 - El mercado, sus ofertas y las contrataciones restantes forman parte del
