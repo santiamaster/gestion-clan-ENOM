@@ -18,14 +18,19 @@ from modelos.combate import (
     EnemigoCombate,
     ResultadoOleada,
 )
-from modelos.expediciones import EstadoExpedicion
-from modelos.tipos import AventureroActivo, EstadoClan
+from modelos.expediciones import (
+    EstadoExpedicion,
+    ResultadoConsecuenciasExpedicion,
+)
+from modelos.tipos import AventureroActivo, AventureroEliminado, EstadoClan
 from servicios.aventureros import seleccionar_grupo
+from servicios.calculos import aplicar_experiencia
 from servicios.combate import (
     crear_aventurero_combate,
     crear_enemigos_oleada,
     resolver_oleada,
 )
+from servicios.iglesia import calcular_coste_resurreccion
 
 
 class MazmorraNoEncontradaError(ValueError):
@@ -273,4 +278,185 @@ def retirar_expedicion(expedicion: EstadoExpedicion) -> None:
         )
     expedicion["estado_flujo"] = "finalizada"
     expedicion["resultado_final"] = "retirada"
+
+
+def _validar_cierre_en_memoria(
+    expedicion: EstadoExpedicion,
+    datos_activos: list[AventureroActivo],
+) -> dict[str, AventureroActivo]:
+    """Valida estado, IDs y plantillas antes de aplicar consecuencias."""
+
+    if expedicion["estado_flujo"] == "consecuencias_aplicadas":
+        raise ExpedicionYaAplicadaError(
+            "Las consecuencias de esta expedición ya fueron aplicadas."
+        )
+    if (
+        expedicion["estado_flujo"] != "finalizada"
+        or expedicion["resultado_final"] is None
+    ):
+        raise EstadoExpedicionInvalidoError(
+            "La expedición debe estar finalizada antes de aplicar consecuencias."
+        )
+    if not expedicion["aventureros"]:
+        raise EstadoExpedicionInvalidoError(
+            "La expedición no contiene integrantes para procesar."
+        )
+
+    activos_por_id: dict[str, AventureroActivo] = {
+        aventurero["id"]: aventurero for aventurero in datos_activos
+    }
+    ids_expedicion: set[str] = set()
+    for temporal in expedicion["aventureros"]:
+        identificador: str = temporal["id"]
+        if identificador in ids_expedicion:
+            raise EstadoExpedicionInvalidoError(
+                "La expedición contiene identificadores repetidos."
+            )
+        ids_expedicion.add(identificador)
+
+        persistente: AventureroActivo | None = activos_por_id.get(identificador)
+        if persistente is None:
+            raise EstadoExpedicionInvalidoError(
+                f"El aventurero '{identificador}' ya no pertenece al clan."
+            )
+        if persistente["plantilla_id"] != temporal["plantilla_id"]:
+            raise EstadoExpedicionInvalidoError(
+                f"La plantilla del aventurero '{identificador}' cambió."
+            )
+
+    return activos_por_id
+
+
+def aplicar_consecuencias_expedicion(
+    expedicion: EstadoExpedicion,
+    estado_clan: EstadoClan,
+    datos_activos: list[AventureroActivo],
+    datos_eliminados: list[AventureroEliminado],
+) -> ResultadoConsecuenciasExpedicion:
+    """Publica en memoria las consecuencias de una expedición finalizada.
+
+    Si regresa al menos un integrante, el clan recibe el dinero y la
+    experiencia se divide entre los supervivientes. Si nadie regresa, el
+    grupo completo pasa al historial como caído no recuperado y pierde ambos
+    pozos. La operación no renueva el mercado ni guarda archivos.
+
+    Args:
+        expedicion: Estado temporal con un resultado final todavía no aplicado.
+        estado_clan: Progreso general que recibirá dinero y marcas de avance.
+        datos_activos: Integrantes que actualmente ocupan cupo en el clan.
+        datos_eliminados: Historial ordenado de integrantes fuera del clan.
+
+    Returns:
+        Un resumen de dinero, experiencia y participantes afectados.
+
+    Raises:
+        ExpedicionYaAplicadaError: Si el cierre ya fue publicado.
+        EstadoExpedicionInvalidoError: Si el flujo, los IDs o las plantillas
+            son incompatibles con el estado persistente.
+    """
+
+    activos_por_id: dict[str, AventureroActivo] = _validar_cierre_en_memoria(
+        expedicion,
+        datos_activos,
+    )
+    supervivientes: list[AventureroCombate] = [
+        aventurero
+        for aventurero in expedicion["aventureros"]
+        if aventurero["esta_vivo"]
+    ]
+    muertos: list[AventureroCombate] = [
+        aventurero
+        for aventurero in expedicion["aventureros"]
+        if not aventurero["esta_vivo"]
+    ]
+    experiencia_individual: int = 0
+    dinero_entregado: int = 0
+    mazmorra_completada: bool = False
+
+    if supervivientes:
+        dinero_entregado = expedicion["dinero_acumulado"]
+        estado_clan["dinero"] += dinero_entregado
+        experiencia_individual = (
+            expedicion["experiencia_acumulada"] // len(supervivientes)
+        )
+
+        for temporal in expedicion["aventureros"]:
+            persistente: AventureroActivo = activos_por_id[temporal["id"]]
+            if temporal["esta_vivo"]:
+                nivel, experiencia = aplicar_experiencia(
+                    persistente["nivel"],
+                    persistente["experiencia"],
+                    experiencia_individual,
+                )
+                persistente["nivel"] = nivel
+                persistente["experiencia"] = experiencia
+                persistente["estado"] = "vivo"
+            else:
+                persistente["estado"] = "muerto"
+
+        if expedicion["resultado_final"] == "mazmorra_completada":
+            estado_clan["mazmorras_completadas"]["mazmorra_1"] = True
+            mazmorra_completada = True
+    else:
+        for temporal in expedicion["aventureros"]:
+            persistente = activos_por_id[temporal["id"]]
+            eliminado: AventureroEliminado = {
+                "id": persistente["id"],
+                "nombre": persistente["nombre"],
+                "plantilla_id": persistente["plantilla_id"],
+                "nivel": persistente["nivel"],
+                "experiencia": persistente["experiencia"],
+                "estado": "muerto",
+                "motivo_baja": "caido_no_recuperado",
+            }
+            datos_eliminados.append(eliminado)
+            datos_activos.remove(persistente)
+
+    expedicion["estado_flujo"] = "consecuencias_aplicadas"
+    return {
+        "dinero_entregado": dinero_entregado,
+        "experiencia_por_superviviente": experiencia_individual,
+        "supervivientes_ids": [
+            aventurero["id"] for aventurero in supervivientes
+        ],
+        "muertos_ids": [aventurero["id"] for aventurero in muertos],
+        "mazmorra_completada": mazmorra_completada,
+    }
+
+
+def evaluar_derrota_definitiva(
+    estado_clan: EstadoClan,
+    datos_activos: list[AventureroActivo],
+) -> None:
+    """Declara la derrota si el clan no conserva una alternativa jugable.
+
+    La evaluación no ejecuta resurrecciones, entierros ni contrataciones. Un
+    cupo lleno de muertos no bloquea el mercado porque el jugador puede
+    enterrarlos gratuitamente antes de contratar.
+
+    Args:
+        estado_clan: Estado con dinero, mercado y contrataciones disponibles.
+        datos_activos: Integrantes vivos y cuerpos recuperados del clan.
+    """
+
+    if estado_clan["estado_partida"] != "en_curso":
+        return
+    if any(aventurero["estado"] == "vivo" for aventurero in datos_activos):
+        return
+    if any(
+        estado_clan["dinero"] >= calcular_coste_resurreccion(aventurero)
+        for aventurero in datos_activos
+        if aventurero["estado"] == "muerto"
+    ):
+        return
+    if (
+        estado_clan["contrataciones_restantes"] > 0
+        and any(
+            estado_clan["dinero"] >= oferta["coste"]
+            for oferta in estado_clan["ofertas_reclutamiento"]
+        )
+    ):
+        return
+
+    estado_clan["estado_partida"] = "derrota"
 

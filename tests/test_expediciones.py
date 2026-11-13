@@ -14,13 +14,18 @@ from modelos.combate import (
     ResultadoCombate,
     ResultadoOleada,
 )
-from modelos.expediciones import EstadoExpedicion
+from modelos.expediciones import (
+    EstadoExpedicion,
+    ResultadoConsecuenciasExpedicion,
+)
 from modelos.tipos import (
     AventureroActivo,
+    AventureroEliminado,
     EstadoAventurero,
     EstadoClan,
     EstadoPartida,
     NivelClan,
+    ResultadoExpedicion,
 )
 from servicios.aventureros import (
     AventureroNoEncontradoError,
@@ -32,11 +37,14 @@ from servicios.aventureros import (
 from servicios.clan import crear_estado_inicial_clan
 from servicios.expediciones import (
     EstadoExpedicionInvalidoError,
+    ExpedicionYaAplicadaError,
     MazmorraNoDisponibleError,
     MazmorraNoEncontradaError,
     TransicionExpedicionInvalidaError,
+    aplicar_consecuencias_expedicion,
     calcular_dinero_oleada,
     continuar_expedicion,
+    evaluar_derrota_definitiva,
     iniciar_expedicion,
     resolver_siguiente_oleada,
     retirar_expedicion,
@@ -50,15 +58,20 @@ def crear_aventurero(
     numero: int,
     *,
     estado: EstadoAventurero = "vivo",
+    plantilla_id: str | None = None,
+    nivel: int = 1,
+    experiencia: int = 0,
 ) -> AventureroActivo:
     """Construye un integrante válido con un identificador correlativo."""
 
     return {
         "id": f"AV-{numero:04d}",
         "nombre": f"Aventurero {numero}",
-        "plantilla_id": PLANTILLAS_PRUEBA[(numero - 1) % len(PLANTILLAS_PRUEBA)],
-        "nivel": 1,
-        "experiencia": 0,
+        "plantilla_id": plantilla_id
+        if plantilla_id is not None
+        else PLANTILLAS_PRUEBA[(numero - 1) % len(PLANTILLAS_PRUEBA)],
+        "nivel": nivel,
+        "experiencia": experiencia,
         "estado": estado,
     }
 
@@ -100,6 +113,36 @@ def crear_resultado_oleada(
         "experiencia_obtenida": experiencia,
         "dinero_obtenido": dinero,
     }
+
+
+def crear_expedicion_finalizada(
+    clan: EstadoClan,
+    activos: list[AventureroActivo],
+    ids: list[str],
+    resultado: ResultadoExpedicion,
+    *,
+    muertos_ids: tuple[str, ...] = (),
+    experiencia: int = 0,
+    dinero: int = 0,
+) -> EstadoExpedicion:
+    """Construye un final controlado partiendo de una selección real."""
+
+    expedicion: EstadoExpedicion = iniciar_expedicion(
+        clan,
+        activos,
+        ids,
+        "MAZMORRA_LIMOS",
+    )
+    for aventurero in expedicion["aventureros"]:
+        if aventurero["id"] in muertos_ids:
+            aventurero["vida_actual"] = 0
+            aventurero["esta_vivo"] = False
+
+    expedicion["experiencia_acumulada"] = experiencia
+    expedicion["dinero_acumulado"] = dinero
+    expedicion["estado_flujo"] = "finalizada"
+    expedicion["resultado_final"] = resultado
+    return expedicion
 
 
 class PruebasInicioExpedicion(unittest.TestCase):
@@ -526,6 +569,316 @@ class PruebasAvanceExpedicion(unittest.TestCase):
             expedicion["resultado_final"],
             "mazmorra_completada",
         )
+
+
+class PruebasConsecuenciasExpedicion(unittest.TestCase):
+    """Comprueba la publicación en memoria del desenlace de una incursión."""
+
+    def test_reparte_pozos_solo_entre_supervivientes_y_recupera_muertos(
+        self,
+    ) -> None:
+        clan: EstadoClan = crear_clan(2)
+        clan["dinero"] = 10
+        activos: list[AventureroActivo] = [
+            crear_aventurero(1),
+            crear_aventurero(2),
+            crear_aventurero(3),
+            crear_aventurero(4),
+        ]
+        no_participante_anterior: AventureroActivo = deepcopy(activos[3])
+        eliminados: list[AventureroEliminado] = []
+        expedicion: EstadoExpedicion = crear_expedicion_finalizada(
+            clan,
+            activos,
+            ["AV-0001", "AV-0002", "AV-0003"],
+            "retirada",
+            muertos_ids=("AV-0003",),
+            experiencia=701,
+            dinero=120,
+        )
+
+        resumen: ResultadoConsecuenciasExpedicion = (
+            aplicar_consecuencias_expedicion(
+                expedicion,
+                clan,
+                activos,
+                eliminados,
+            )
+        )
+
+        self.assertEqual(clan["dinero"], 130)
+        self.assertEqual(activos[0]["nivel"], 3)
+        self.assertEqual(activos[0]["experiencia"], 50)
+        self.assertEqual(activos[1]["nivel"], 3)
+        self.assertEqual(activos[1]["experiencia"], 50)
+        self.assertEqual(activos[2]["estado"], "muerto")
+        self.assertEqual(activos[2]["nivel"], 1)
+        self.assertEqual(activos[2]["experiencia"], 0)
+        self.assertEqual(activos[3], no_participante_anterior)
+        self.assertNotIn("vida_actual", activos[0])
+        self.assertEqual(eliminados, [])
+        self.assertFalse(clan["mazmorras_completadas"]["mazmorra_1"])
+        self.assertEqual(expedicion["estado_flujo"], "consecuencias_aplicadas")
+        self.assertEqual(
+            resumen,
+            {
+                "dinero_entregado": 120,
+                "experiencia_por_superviviente": 350,
+                "supervivientes_ids": ["AV-0001", "AV-0002"],
+                "muertos_ids": ["AV-0003"],
+                "mazmorra_completada": False,
+            },
+        )
+
+        estado_publicado = deepcopy((clan, activos, eliminados, expedicion))
+        with self.assertRaises(ExpedicionYaAplicadaError):
+            aplicar_consecuencias_expedicion(
+                expedicion,
+                clan,
+                activos,
+                eliminados,
+            )
+        self.assertEqual(
+            (clan, activos, eliminados, expedicion),
+            estado_publicado,
+        )
+
+    def test_entrega_nuevamente_el_bono_de_una_mazmorra_ya_completada(
+        self,
+    ) -> None:
+        clan: EstadoClan = crear_clan()
+        clan["dinero"] = 10
+        clan["mazmorras_completadas"]["mazmorra_1"] = True
+        activos: list[AventureroActivo] = [crear_aventurero(1)]
+        expedicion: EstadoExpedicion = crear_expedicion_finalizada(
+            clan,
+            activos,
+            ["AV-0001"],
+            "mazmorra_completada",
+            dinero=100,
+        )
+
+        resumen: ResultadoConsecuenciasExpedicion = (
+            aplicar_consecuencias_expedicion(expedicion, clan, activos, [])
+        )
+
+        self.assertEqual(clan["dinero"], 110)
+        self.assertTrue(clan["mazmorras_completadas"]["mazmorra_1"])
+        self.assertTrue(resumen["mazmorra_completada"])
+        self.assertEqual(clan["nivel"], 1)
+
+    def test_derrota_total_pierde_pozos_y_registra_caidos_en_orden(
+        self,
+    ) -> None:
+        clan: EstadoClan = crear_clan()
+        clan["dinero"] = 25
+        activos: list[AventureroActivo] = [
+            crear_aventurero(1),
+            crear_aventurero(2),
+            crear_aventurero(3),
+        ]
+        no_participante_anterior: AventureroActivo = deepcopy(activos[2])
+        eliminados: list[AventureroEliminado] = []
+        expedicion: EstadoExpedicion = crear_expedicion_finalizada(
+            clan,
+            activos,
+            ["AV-0002", "AV-0001"],
+            "derrota_total",
+            muertos_ids=("AV-0001", "AV-0002"),
+            experiencia=900,
+            dinero=500,
+        )
+
+        resumen: ResultadoConsecuenciasExpedicion = (
+            aplicar_consecuencias_expedicion(
+                expedicion,
+                clan,
+                activos,
+                eliminados,
+            )
+        )
+
+        self.assertEqual(clan["dinero"], 25)
+        self.assertEqual(activos, [no_participante_anterior])
+        self.assertEqual(
+            [aventurero["id"] for aventurero in eliminados],
+            ["AV-0002", "AV-0001"],
+        )
+        for caido in eliminados:
+            self.assertEqual(caido["estado"], "muerto")
+            self.assertEqual(caido["motivo_baja"], "caido_no_recuperado")
+            self.assertEqual(caido["nivel"], 1)
+            self.assertEqual(caido["experiencia"], 0)
+        self.assertEqual(
+            resumen,
+            {
+                "dinero_entregado": 0,
+                "experiencia_por_superviviente": 0,
+                "supervivientes_ids": [],
+                "muertos_ids": ["AV-0002", "AV-0001"],
+                "mazmorra_completada": False,
+            },
+        )
+
+    def test_rechaza_estados_no_finalizados_y_prioriza_la_reaplicacion(
+        self,
+    ) -> None:
+        clan: EstadoClan = crear_clan()
+        activos: list[AventureroActivo] = [crear_aventurero(1)]
+        expedicion: EstadoExpedicion = iniciar_expedicion(
+            clan,
+            activos,
+            ["AV-0001"],
+            "MAZMORRA_LIMOS",
+        )
+        estado_anterior = deepcopy((clan, activos, expedicion))
+
+        with self.assertRaises(EstadoExpedicionInvalidoError):
+            aplicar_consecuencias_expedicion(expedicion, clan, activos, [])
+        self.assertEqual((clan, activos, expedicion), estado_anterior)
+
+        expedicion["estado_flujo"] = "consecuencias_aplicadas"
+        expedicion["resultado_final"] = None
+        estado_aplicado = deepcopy((clan, activos, expedicion))
+        with self.assertRaises(ExpedicionYaAplicadaError):
+            aplicar_consecuencias_expedicion(expedicion, clan, activos, [])
+        self.assertEqual((clan, activos, expedicion), estado_aplicado)
+
+    def test_valida_todos_los_ids_y_plantillas_antes_de_mutar(self) -> None:
+        for alteracion in ("ausente", "plantilla"):
+            with self.subTest(alteracion=alteracion):
+                clan: EstadoClan = crear_clan()
+                activos: list[AventureroActivo] = [
+                    crear_aventurero(1),
+                    crear_aventurero(2),
+                ]
+                eliminados: list[AventureroEliminado] = []
+                expedicion: EstadoExpedicion = crear_expedicion_finalizada(
+                    clan,
+                    activos,
+                    ["AV-0001", "AV-0002"],
+                    "retirada",
+                    experiencia=300,
+                    dinero=90,
+                )
+                if alteracion == "ausente":
+                    activos.pop()
+                else:
+                    activos[1]["plantilla_id"] = "PLANTILLA_SOLDADO"
+                anterior = deepcopy((clan, activos, eliminados, expedicion))
+
+                with self.assertRaises(EstadoExpedicionInvalidoError):
+                    aplicar_consecuencias_expedicion(
+                        expedicion,
+                        clan,
+                        activos,
+                        eliminados,
+                    )
+
+                self.assertEqual(
+                    (clan, activos, eliminados, expedicion),
+                    anterior,
+                )
+
+
+class PruebasDerrotaDefinitiva(unittest.TestCase):
+    """Comprueba si el clan conserva alguna alternativa jugable."""
+
+    def test_continua_si_queda_un_aventurero_vivo(self) -> None:
+        clan: EstadoClan = crear_clan()
+        activos: list[AventureroActivo] = [crear_aventurero(1)]
+
+        evaluar_derrota_definitiva(clan, activos)
+
+        self.assertEqual(clan["estado_partida"], "en_curso")
+
+    def test_continua_si_alcanza_exactamente_para_resucitar(self) -> None:
+        clan: EstadoClan = crear_clan()
+        clan["dinero"] = 7
+        activos: list[AventureroActivo] = [
+            crear_aventurero(
+                1,
+                estado="muerto",
+                plantilla_id="PLANTILLA_SOLDADO",
+            )
+        ]
+
+        evaluar_derrota_definitiva(clan, activos)
+
+        self.assertEqual(clan["estado_partida"], "en_curso")
+
+    def test_continua_por_oferta_pagable_aunque_el_cupo_este_lleno(
+        self,
+    ) -> None:
+        clan: EstadoClan = crear_clan()
+        clan["dinero"] = 10
+        clan["contrataciones_restantes"] = 1
+        clan["ofertas_reclutamiento"] = [
+            {
+                "id_oferta": "OF-01",
+                "nombre": "Liora",
+                "plantilla_id": "PLANTILLA_SOLDADO",
+                "nivel": 1,
+                "coste": 10,
+            }
+        ]
+        activos: list[AventureroActivo] = [
+            crear_aventurero(
+                numero,
+                estado="muerto",
+                plantilla_id="PLANTILLA_SOLDADO",
+            )
+            for numero in range(1, 6)
+        ]
+
+        evaluar_derrota_definitiva(clan, activos)
+
+        self.assertEqual(clan["estado_partida"], "en_curso")
+
+    def test_declara_derrota_sin_alternativas_pagables(self) -> None:
+        casos: list[tuple[EstadoClan, list[AventureroActivo]]] = []
+
+        sin_integrantes: EstadoClan = crear_clan()
+        casos.append((sin_integrantes, []))
+
+        resurreccion_cara: EstadoClan = crear_clan()
+        resurreccion_cara["dinero"] = 6
+        casos.append(
+            (
+                resurreccion_cara,
+                [
+                    crear_aventurero(
+                        1,
+                        estado="muerto",
+                        plantilla_id="PLANTILLA_SOLDADO",
+                    )
+                ],
+            )
+        )
+
+        oferta_cara: EstadoClan = crear_clan()
+        oferta_cara["dinero"] = 9
+        oferta_cara["contrataciones_restantes"] = 1
+        oferta_cara["ofertas_reclutamiento"] = [
+            {
+                "id_oferta": "OF-01",
+                "nombre": "Liora",
+                "plantilla_id": "PLANTILLA_SOLDADO",
+                "nivel": 1,
+                "coste": 10,
+            }
+        ]
+        casos.append((oferta_cara, []))
+
+        mercado_agotado: EstadoClan = deepcopy(oferta_cara)
+        mercado_agotado["dinero"] = 10
+        mercado_agotado["contrataciones_restantes"] = 0
+        casos.append((mercado_agotado, []))
+
+        for numero, (clan, activos) in enumerate(casos, start=1):
+            with self.subTest(caso=numero):
+                evaluar_derrota_definitiva(clan, activos)
+                self.assertEqual(clan["estado_partida"], "derrota")
 
 
 if __name__ == "__main__":
